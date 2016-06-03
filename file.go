@@ -10,23 +10,25 @@ import (
 // The relation between Size and len(Data) tells what operation needs
 // to be performed. If they are the same, the source bytes need to be overwritten,
 // otherwise bytes need to be inserted or removed from the source stream.
-//
-// It is an error to have multiple FileOps referring to the same bytes,
-// i.e. Offset and Size must not overlap with other FileOps.
 type FileOp struct {
 	Offset int64  // file offset of this change
-	Size   int    // number of bytes in the source to replace with Data
-	Data   []byte // replacement data
+	Size   int    // number of bytes in the source to skip at Offset
+	Data   []byte // data to insert at Offset
 }
 
-type FileOps []FileOp
+// FileMod represents modification, which is a (possibly empty)
+// set of operations to be applied to a file.
+//
+// Elements of FileMod must be ordered with increasing Offset and must not overlap.
+type FileMod []FileOp
 
 // Copy copies r to w with ops applied.
-func (ops FileOps) Copy(w io.Writer, r io.Reader) (written int64, err error) {
-	return io.Copy(w, ops.Reader(r))
-}
+// It panics if ops is invalid.
+func (ops FileMod) Copy(w io.Writer, r io.Reader) (written int64, err error) {
+	if !ops.Valid() {
+		panic("FileMod invalid")
+	}
 
-func (ops FileOps) xCopy(w io.Writer, r io.Reader) (written int64, err error) {
 	var read int64
 	for _, o := range ops {
 		if ncopy := o.Offset - read; ncopy > 0 {
@@ -72,8 +74,28 @@ func (ops FileOps) xCopy(w io.Writer, r io.Reader) (written int64, err error) {
 }
 
 // Reader returns an io.Reader that applies ops to r.
-func (ops FileOps) Reader(r io.Reader) io.Reader {
+// It panics if ops is invalid.
+func (ops FileMod) Reader(r io.Reader) io.Reader {
+	if !ops.Valid() {
+		panic("FileMod invalid")
+	}
+
+	if len(r.ops) == 0 {
+		return r
+	}
 	return &opreader{r: r, ops: ops, tmp: make([]byte, 4096)}
+}
+
+// Valid reports if ops has properly ordered non-overlaping elements.
+func (ops FileMod) Valid() bool {
+	var off int64
+	for _, o := range ops {
+		if o.Offset < off {
+			return false
+		}
+		off = o.Offset + int64(o.Size)
+	}
+	return true
 }
 
 type opreader struct {

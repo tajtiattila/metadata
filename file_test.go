@@ -51,13 +51,13 @@ func testFileOps(t *testing.T, want []byte, r io.Reader, ops ...FileOp) {
 		}
 	}
 
-	// set up pipe to test unused xCopy implementation
+	// set up pipe to test unused Copy implementation
 	pr, pw := io.Pipe()
 	defer pw.Close()
 	xch := make(chan []byte)
 	go func() {
 		buf := new(bytes.Buffer)
-		_, err := FileOps(ops).xCopy(buf, pr)
+		_, err := FileOps(ops).Copy(buf, pr)
 		if err != nil {
 			t.Error(err)
 		}
