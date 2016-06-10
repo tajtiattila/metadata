@@ -80,7 +80,7 @@ func (ops FileMod) Reader(r io.Reader) io.Reader {
 		panic("FileMod invalid")
 	}
 
-	if len(r.ops) == 0 {
+	if len(ops) == 0 {
 		return r
 	}
 	return &opreader{r: r, ops: ops, tmp: make([]byte, 4096)}
