@@ -51,7 +51,7 @@ func fmtTime(t time.Time, islocal bool) string {
 }
 
 func addXmp(m *Metadata, p []byte) error {
-	xm, err := xmp.Decode(bytes.NewReader(p))
+	_, err := xmp.Decode(bytes.NewReader(p))
 	if err != nil {
 		return err
 	}
