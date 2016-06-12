@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	ErrExifNotFound = errors.New("exif: exif data not found")
-	ErrExifDecode   = errors.New("exif: jpeg decode error")
-	ErrExifEncode   = errors.New("exif: jpeg encode error")
+	NotFound  = errors.New("exif: exif data not found")
+	ErrDecode = errors.New("exif: jpeg decode error")
+	ErrEncode = errors.New("exif: jpeg encode error")
 )
 
 // Exif represents Exif format metadata in JPEG/Exif files.
@@ -156,9 +156,9 @@ func exifFromReader(r io.Reader) ([]byte, error) {
 
 	err = j.Err()
 	if err != nil {
-		err = ErrExifDecode
+		return nil, err
 	}
-	return nil, err
+	return nil, NotFound
 }
 
 func cmpChunkHeader(p, h []byte) bool {

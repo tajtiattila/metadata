@@ -16,6 +16,8 @@ var nsmap = map[string]string{
 var (
 	CreateDate = tagString("xmp:CreateDate") // used for exif/DateTimeDigitized
 
+	Rating = tagInt("xmp:Rating")
+
 	DateTimeOriginal = tagString("exif:DateTimeOriginal")
 
 	GPSLatitude  = tagCoord("exif:GPSLatitude", 'N', 'S')
@@ -24,8 +26,6 @@ var (
 	GPSTimeStamp = tagString("exif:GPSTimeStamp") // includes exif/GPSDateStamp
 
 	Orientation = tagInt("exif:Orientation")
-
-	Rating = tagString("xmp:Rating")
 
 	Make  = tagString("tiff:Make")
 	Model = tagString("tiff:Model")

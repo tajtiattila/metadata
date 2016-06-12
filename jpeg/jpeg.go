@@ -10,10 +10,7 @@ var (
 	// ErrNotJpeg is returned if the file is not a jpeg file.
 	ErrNotJpeg = errors.New("jpeg: missing start of image marker")
 
-	// ErrFormat is returned if the file is corrupt or invalid.
-	ErrFormat = errors.New("jpeg: format error")
-
-	// ErrTooLong is returned if the serialized exif is too long to be written in an jpeg file.
+	// ErrTooLong is returned if the a chunk is too long to be written in an jpeg file.
 	ErrTooLong = errors.New("jpeg: encoded length too long")
 )
 
@@ -21,7 +18,7 @@ type Scanner struct {
 	rr io.Reader
 
 	buf  []byte
-	r, w int
+	r, w int // read and write position
 
 	startChunk bool
 	chunkLen   int // chunk bytes left
@@ -31,6 +28,9 @@ type Scanner struct {
 	scanState int
 
 	err error
+
+	// number of format errors encountered
+	formatError int
 }
 
 const (
@@ -99,6 +99,8 @@ func (j *Scanner) Next() bool {
 		return true
 	}
 
+	j.chunkLen = 0
+
 	// readAhead is the number of bytes enough to recognise APP segments
 	// JFIF  9 bytes: FF E0 .. .. 'J' 'F' 'I' 'F' 00
 	// JFXX  9 bytes: FF E0 .. .. 'J' 'F' 'X' 'X' 00
@@ -109,8 +111,7 @@ func (j *Scanner) Next() bool {
 	// or there is an error or EOF
 	for j.err == nil && j.r+readAhead > j.w {
 		if j.r != 0 {
-			j.w -= copy(j.buf, j.buf[j.r:j.w])
-			j.r = 0
+			j.r, j.w = 0, copy(j.buf, j.buf[j.r:j.w])
 		}
 
 		n, err := j.rr.Read(j.buf[j.w:])
@@ -121,8 +122,10 @@ func (j *Scanner) Next() bool {
 	n := j.w - j.r
 	if n < 4 {
 		// no room for useful data left
-		j.err = ErrFormat
-		return false
+		j.formatError++
+		j.p = j.buf[j.r:j.w]
+		j.r, j.w = 0, 0
+		return len(j.p) != 0
 	}
 
 	// there is still data left
@@ -149,9 +152,15 @@ func (j *Scanner) Next() bool {
 		}
 		l := chunkLen(j.buf[j.r:])
 		if l == -1 {
-			// invalid chunk length
-			j.err = ErrFormat
-			return false
+			// invalid chunk length: skip marker and size
+			j.formatError++
+			s := j.r + 4
+			j.r += 4
+			j.p = j.buf[s:j.r]
+			if j.r == j.w {
+				j.r, j.w = 0, 0
+			}
+			return true
 		}
 		j.startChunk = true
 		if j.r+l <= j.w {
@@ -195,13 +204,15 @@ func (j *Scanner) ReadChunk() ([]byte, error) {
 			m, j.err = io.ReadFull(j.rr, p[n:])
 		} else {
 			// read into buffer
-			m, j.err = io.ReadAtLeast(j.rr, j.buf, j.chunkLen)
-			j.r, j.w = copy(p[n:], j.buf), m
+			var buffered int
+			buffered, j.err = io.ReadAtLeast(j.rr, j.buf, j.chunkLen)
+			m = copy(p[n:], j.buf[:buffered])
+			j.r, j.w = m, buffered
 		}
 
 		n += m
 		j.chunkLen -= m
-		if m == 0 {
+		if m == 0 && j.err == nil {
 			j.err = io.ErrUnexpectedEOF
 		}
 	}
@@ -209,14 +220,14 @@ func (j *Scanner) ReadChunk() ([]byte, error) {
 	return p[:n], j.err
 }
 
-// Len returns the currently available Bytes in the scanner.
+// Len returns the currently available Bytes in Scanner.
 func (j *Scanner) Len() int {
 	return len(j.p)
 }
 
 // Bytes returns the most recent byte slice scanned after calling Next.
 // The returned slice must not be modified.
-// It is valid until the next call of Next or ReadChunk,
+// It is valid until the next call of Next or ReadChunk.
 func (j *Scanner) Bytes() []byte {
 	return j.p
 }

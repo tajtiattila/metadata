@@ -7,10 +7,11 @@ import (
 	"io"
 )
 
+// Attribute names read from EXIF
+//
+// Date/time values are formatted as expected by
+// the Time type of this package.
 const (
-	// Date/time values, with optional time zone
-	// but otherwise formatted as RFC3339.
-	//
 	// Note: Exif has no standard way to specify time zone,
 	// GPS location can be used to deduce it. From Exif the corresponding
 	// SubSecTime is included in the values reported.
@@ -46,6 +47,10 @@ func (m *Metadata) Set(name, value string) {
 	m.Attr[name] = value
 }
 
+func (m *Metadata) Get(name string) string {
+	return m.Attr[name]
+}
+
 var ErrUnknownFormat = errors.New("metadata: unknown content format")
 var ErrNoMeta = errors.New("metadata: no metadata found")
 
@@ -59,7 +64,7 @@ func Parse(r io.Reader) (*Metadata, error) {
 	switch err {
 	case io.ErrUnexpectedEOF:
 		err = io.EOF
-	case io.EOF:
+	case io.EOF, nil:
 		// pass
 	default:
 		return nil, err
@@ -69,18 +74,7 @@ func Parse(r io.Reader) (*Metadata, error) {
 }
 
 func ParseAt(r io.ReaderAt) (*Metadata, error) {
-	p := make([]byte, sniffLen)
-	n, err := r.ReadAt(p, 0)
-	switch err {
-	case io.ErrUnexpectedEOF:
-		err = io.EOF
-	case io.EOF:
-		// pass
-	default:
-		return nil, err
-	}
-
-	return parse(p[:n], &atReadSeeker{0, r})
+	return Parse(&atReadSeeker{0, r})
 }
 
 func parse(p []byte, r io.Reader) (*Metadata, error) {
@@ -117,4 +111,58 @@ func ismp4(p []byte) bool {
 
 	// don't care about the acutal codec, not relevant for metadata
 	return true
+}
+
+// TimeAttrs lists time attributes recognised in Merge.
+var TimeAttrs = setOf(DateTimeOriginal, DateTimeCreated, GPSDateTime)
+
+// Merge merges metadata from multiple sources.
+func Merge(v ...*Metadata) *Metadata {
+	switch len(v) {
+	case 0:
+		return nil
+	case 1:
+		return v[0]
+	}
+
+	result := new(Metadata)
+	for _, m := range v {
+		for key, val := range m.Attr {
+			if _, ok := TimeAttrs[key]; ok {
+				r, ok := result.Attr[key]
+				if !ok || timeBetter(val, r) {
+					result.Set(key, val)
+				}
+			} else {
+				result.Set(key, val)
+			}
+		}
+	}
+	return result
+}
+
+func timeBetter(val, than string) bool {
+	const zoneScore = 2
+
+	v := ParseTime(val)
+	vscore := v.Prec
+	if v.Prec > 3 && v.ZoneKnown {
+		vscore += zoneScore
+	}
+
+	t := ParseTime(than)
+	tscore := t.Prec
+	if t.Prec > 3 && t.ZoneKnown {
+		tscore += zoneScore
+	}
+
+	return vscore > tscore
+}
+
+func setOf(v ...string) map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, s := range v {
+		m[s] = struct{}{}
+	}
+	return m
 }

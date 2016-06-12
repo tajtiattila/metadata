@@ -4,16 +4,12 @@ import (
 	"bytes"
 	"os"
 	"testing"
+
+	"github.com/tajtiattila/metadata/testutil"
 )
 
-var fns = []string{
-	"coffee-sf.jpg",
-	"gocon-tokyo.jpg",
-	"sub.jpg",
-}
-
 func TestDecode(t *testing.T) {
-	for _, n := range fns {
+	for _, n := range testutil.MediaFileNames(t, "image/jpeg") {
 		testDecodeBytes(t, n)
 	}
 }
@@ -21,7 +17,7 @@ func TestDecode(t *testing.T) {
 func testDecodeBytes(t *testing.T, fn string) {
 	t.Log(fn)
 
-	f, err := os.Open("../testdata/" + fn)
+	f, err := os.Open(fn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,6 +25,9 @@ func testDecodeBytes(t *testing.T, fn string) {
 
 	raw, err := exifFromReader(f)
 	if err != nil {
+		if err == NotFound {
+			return
+		}
 		t.Fatal(err)
 	}
 
@@ -41,7 +40,7 @@ func testDecodeBytes(t *testing.T, fn string) {
 }
 
 func TestEncodeBytes(t *testing.T) {
-	for _, n := range fns {
+	for _, n := range testutil.MediaFileNames(t, "image/jpeg") {
 		testEncodeBytes(t, n)
 	}
 }
@@ -49,7 +48,7 @@ func TestEncodeBytes(t *testing.T) {
 func testEncodeBytes(t *testing.T, fn string) {
 	t.Log(fn)
 
-	f, err := os.Open("../testdata/" + fn)
+	f, err := os.Open(fn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,12 +56,16 @@ func testEncodeBytes(t *testing.T, fn string) {
 
 	src, err := exifFromReader(f)
 	if err != nil {
-		t.Fatal(err)
+		if err == NotFound {
+			return
+		}
+		t.Fatal("exifFromReader:", err)
 	}
 
 	x, err := DecodeBytes(src)
 	if err != nil {
-		t.Fatal(err)
+		t.Logf("%.32x", src)
+		t.Fatal("DecodeBytes:", err)
 	}
 
 	enc, err := x.EncodeBytes()

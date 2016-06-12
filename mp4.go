@@ -3,6 +3,7 @@ package metadata
 import (
 	"bytes"
 	"io"
+	"log"
 
 	"github.com/tajtiattila/metadata/mp4"
 )
@@ -15,12 +16,21 @@ func parseMP4(r io.Reader) (*Metadata, error) {
 		return nil, err
 	}
 
-	m := new(Metadata)
-	m.Set(DateTimeCreated, fmtTime(f.Header.DateCreated, false))
+	var meta []*Metadata
+
+	mvhd := new(Metadata)
+	mvhd.Set(DateTimeCreated, fmtTime(f.Header.DateCreated, false))
+	meta = append(meta, mvhd)
+
 	for _, b := range f.Child {
 		if b.Type == "uuid" && bytes.HasPrefix(b.Raw, mp4xmpUuid) {
-			addXmp(m, b.Raw[len(mp4xmpUuid):])
+			m, err := FromXMPBytes(b.Raw[len(mp4xmpUuid):])
+			if err != nil {
+				log.Println("FromXmpBytes error:", err)
+			} else {
+				meta = append(meta, m)
+			}
 		}
 	}
-	return m, nil
+	return Merge(meta...), nil
 }

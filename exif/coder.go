@@ -294,7 +294,7 @@ func decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int, error) {
 	var tags []Entry
 	for i := 0; i < ntags; i++ {
 		// decode entry header
-		if len(p) < int(offset+12) {
+		if len(p) < offset+12 {
 			return nil, 0, ErrCorruptTag
 		}
 		tag := bo.Uint16(p[offset:])
@@ -303,24 +303,23 @@ func decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int, error) {
 		valuebits := p[offset+8 : offset+12]
 		offset += 12
 
-		// return early for invalid count
 		nbytes := typeSize(typ, count)
-		if nbytes == 0 {
-			return nil, 0, ErrCorruptDir
-		}
 
-		// If value doesn't fit in tag header,
-		// then it is an offset from the start
-		// of the tiff header (EXIF 2.2 §4.6.2).
-		if nbytes > 4 {
+		switch {
+		case nbytes <= 0:
+			// leave corrupt entry alone don't try to decode alone
+		case nbytes <= 4:
+			valuebits = valuebits[:nbytes]
+		default:
+			// If value doesn't fit in tag header,
+			// then it is an offset from the start
+			// of the tiff header (EXIF 2.2 §4.6.2).
 			n := int(nbytes)
 			valueoffset := int(bo.Uint32(valuebits))
 			if valueoffset < 0 || len(p) < valueoffset+n {
 				return nil, 0, ErrCorruptDir
 			}
 			valuebits = p[valueoffset : valueoffset+n]
-		} else {
-			valuebits = valuebits[:nbytes]
 		}
 
 		// make a copy of the value for the tag
