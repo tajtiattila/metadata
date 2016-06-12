@@ -1,4 +1,4 @@
-// Package jpeg implenments a JPEG scanner.
+// Package jpeg implements a low-level a JPEG scanner.
 package jpeg
 
 import (
@@ -13,6 +13,9 @@ var (
 
 	// ErrTooLong is returned if the a chunk is too long to be written in an jpeg file.
 	ErrTooLong = errors.New("jpeg: encoded length too long")
+
+	// ErrNoChunk is returned if the data at the current position is not a chunk.
+	ErrNoChunk = errors.New("jpeg: not a chunk")
 )
 
 type Scanner struct {
@@ -40,6 +43,16 @@ const (
 	scanStateScan   // start of scan seen
 )
 
+// MaxPrefixLen is the number of max. bytes accepted by Scanner.IsChunk.
+//
+// It should be long enough to recognise known APP segments.
+//
+// JFIF: 'J' 'F' 'I' 'F' 00 (5 bytes)
+// JFXX: 'J' 'F' 'X' 'X' 00 (5 bytes)
+// EXIF: 'E' 'x' 'i' 'f' 00 00 (9 bytes)
+// XMP: "http://ns.adobe.com/xap/1.0/" 00 (30 bytes)
+const MaxPrefixLen = 32
+
 func NewScanner(r io.Reader) (*Scanner, error) {
 	j := &Scanner{
 		rr:  r,
@@ -60,7 +73,7 @@ func NewScanner(r io.Reader) (*Scanner, error) {
 	return j, nil
 }
 
-// Next() reads the next section
+// Next() reads the next block of logical units in Scanner.
 func (j *Scanner) Next() bool {
 	if j.err != nil {
 		return false
@@ -102,11 +115,7 @@ func (j *Scanner) Next() bool {
 
 	j.chunkLen = 0
 
-	// readAhead is the number of bytes enough to recognise APP segments
-	// JFIF  9 bytes: FF E0 .. .. 'J' 'F' 'I' 'F' 00
-	// JFXX  9 bytes: FF E0 .. .. 'J' 'F' 'X' 'X' 00
-	// EXIF 10 bytes: FF E1 .. .. 'E' 'x' 'i' 'f' 00 00
-	const readAhead = 32
+	const readAhead = 4 + MaxPrefixLen
 
 	// fill buffer until there is enough data to return,
 	// or there is an error or EOF
@@ -180,19 +189,61 @@ func (j *Scanner) Next() bool {
 // StartChunk returns true if the last call to Next()
 // found chunked data in the stream.
 func (j *Scanner) StartChunk() bool {
-	// TODO: replace with test of j.p; there is no need for another
 	return j.startChunk
 }
 
-// ReadChunk reads the current chunk data the into a new slice
-// after calling Next.
+// NextChunk scans for the next chunk in the stream.
+func (j *Scanner) NextChunk() bool {
+	for j.Next() {
+		if j.StartChunk() {
+			return true
+		}
+	}
+	return false
+}
+
+// ReadChunk reads the current chunk in a new byte slice,
+// or returns ErrNoChunk if the data at the current position
+// is not a segment with a (possibly empty) payload.
+func (j *Scanner) ReadChunk() (marker byte, payload []byte, err error) {
+	if !j.StartChunk() || len(j.p) < 4 || j.p[0] != 0xff {
+		return 0, nil, ErrNoChunk
+	}
+	marker = j.p[1]
+	if marker == 0xff || marker == 0x00 || (0xd0 <= marker && marker <= 0xd9) {
+		return 0, nil, ErrNoChunk
+	}
+	segment, err := j.ReadSegment()
+	if err != nil {
+		return 0, nil, err
+	}
+	return marker, segment[4:], nil
+}
+
+// IsChunk checks if the Scanner is at the start of a chunk
+// having marker and prefix.
+// IsChunk panics if prefix is longer than MaxPrefixLen.
+func (j *Scanner) IsChunk(marker byte, prefix []byte) bool {
+	if len(prefix) > MaxPrefixLen {
+		// Test agains overlong prefix could
+		// fail even if the stream had the prefix,
+		// we just haven't bufferet it.
+		panic("IsChunk prefix too long")
+	}
+	if !j.StartChunk() || len(j.p) < 4 || j.p[0] != 0xff || j.p[1] != marker {
+		return false
+	}
+	return bytes.HasPrefix(j.p[4:], prefix)
+}
+
+// ReadSegment reads the current section the into
+// a new byte slice after calling Next.
 // The returned slice will always have a prefix of Bytes().
+// ReadSegment returns valid sections as a single byte slice.
 //
-// The first four bytes are chunk header which contains the
-// the marker header (0xff and another byte), and the two-byte length.
-//
-// If no new chunk has been found, ReadChunk() returns Bytes().
-func (j *Scanner) ReadChunk() ([]byte, error) {
+// ReadSegment returns a copy of Bytes()
+// if the Next() found padding or data without payload.
+func (j *Scanner) ReadSegment() ([]byte, error) {
 	if j.err != nil {
 		return nil, j.err
 	}
@@ -232,8 +283,8 @@ func (j *Scanner) Len() int {
 }
 
 // Bytes returns the most recent byte slice scanned after calling Next.
-// The returned slice must not be modified.
-// It is valid until the next call of Next or ReadChunk.
+// The returned slice must not be modified, and
+// is valid until the next call to Next(Chunk) or Read(Chunk|Segment).
 func (j *Scanner) Bytes() []byte {
 	return j.p
 }

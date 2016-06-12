@@ -19,7 +19,7 @@ func TestScanner(t *testing.T) {
 			continue
 		}
 		testScannerBytes(t, p)
-		testScannerChunks(t, p)
+		testScannerSegments(t, p)
 	}
 }
 
@@ -77,12 +77,12 @@ func testScannerBytes(t *testing.T, p []byte) {
 	}
 }
 
-// testScannerChunks tests if using Scanner.ReadChunk on
+// testScannerSegments tests if using Scanner.ReadSegment on
 // the bytes of p yields the same bytes as the source.
-func testScannerChunks(t *testing.T, p []byte) {
-	t.Log("testScannerChunks")
+func testScannerSegments(t *testing.T, p []byte) {
+	t.Log("testScannerSegments")
 
-	var chunks [][]byte
+	var segments [][]byte
 
 	s, err := NewScanner(bytes.NewReader(p))
 	if err != nil {
@@ -90,41 +90,41 @@ func testScannerChunks(t *testing.T, p []byte) {
 		return
 	}
 	for s.Next() {
-		chunk, err := s.ReadChunk()
+		seg, err := s.ReadSegment()
 		if err != nil {
-			t.Error("ReadChunk error:", err)
+			t.Error("ReadSegment error:", err)
 			return
 		}
-		if len(chunk) == 0 {
-			t.Error("error: testScannerChunks got empty chunk")
+		if len(seg) == 0 {
+			t.Error("error: testScannerSegments got empty segment")
 			continue
 		}
 		if s.StartChunk() {
-			if len(chunk) < 4 ||
-				chunk[0] != 0xff || chunk[1] == 0 || chunk[1] == 0xff {
-				t.Error("error: testScannerChunks invalid chunk %x:", chunk)
+			if len(seg) < 4 ||
+				seg[0] != 0xff || seg[1] == 0 || seg[1] == 0xff {
+				t.Error("error: testScannerSegments invalid segment %x:", seg)
 				return
 			}
-			l := int(chunk[2])<<8 + int(chunk[3])
-			if l+2 != len(chunk) {
-				t.Error("error: testScannerChunks chunk len: want %v got %v", l+2, len(chunk))
+			l := int(seg[2])<<8 + int(seg[3])
+			if l+2 != len(seg) {
+				t.Error("error: testScannerSegments segment len: want %v got %v", l+2, len(seg))
 			}
 		}
-		t.Logf("%-5v %4d %.32x", s.StartChunk(), len(chunk), chunk)
-		chunks = append(chunks, chunk)
+		t.Logf("%-5v %4d %.32x", s.StartChunk(), len(seg), seg)
+		segments = append(segments, seg)
 	}
 	if err := s.Err(); err != nil {
-		t.Error("testScannerChunks finish error:", err)
+		t.Error("testScannerSegments finish error:", err)
 		return
 	}
 
 	last, err := ioutil.ReadAll(s.Reader())
 	if err != nil {
-		t.Error("testScannerChunks read last bits error:", err)
+		t.Error("testScannerSegments read last bits error:", err)
 	}
-	chunks = append(chunks, last)
+	segments = append(segments, last)
 
-	q := bytes.Join(chunks, nil)
+	q := bytes.Join(segments, nil)
 
 	if !bytes.Equal(p, q) {
 		t.Error("error: estScannerChunks scanned bytes differ from source")

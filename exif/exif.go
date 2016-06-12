@@ -67,39 +67,39 @@ func Copy(w io.Writer, r io.Reader, x *Exif) error {
 		}
 	}
 
-	var chunks [][]byte
+	var segments [][]byte
 	var jfifChunk, jfxxChunk []byte
 	var hasExif bool
 	has := 0
 
 	for has < 3 && j.Next() {
-		chunk, err := j.ReadChunk()
+		seg, err := j.ReadSegment()
 		if err != nil {
 			return err
 		}
 
 		switch {
-		case jfifChunk == nil && cmpChunkHeader(chunk, jfifChunkHeader):
-			jfifChunkHeader = chunk
+		case jfifChunk == nil && cmpChunkHeader(seg, jfifChunkHeader):
+			jfifChunkHeader = seg
 			has++
-		case jfxxChunk == nil && cmpChunkHeader(chunk, jfxxChunkHeader):
-			jfxxChunkHeader = chunk
+		case jfxxChunk == nil && cmpChunkHeader(seg, jfxxChunkHeader):
+			jfxxChunkHeader = seg
 			has++
-		case !hasExif && cmpChunkHeader(chunk, exifChunkHeader):
+		case !hasExif && cmpChunkHeader(seg, exifChunkHeader):
 			hasExif = true
 			has++
 		default:
-			// unrecognised or duplicate chunk
-			chunks = append(chunks, chunk)
+			// unrecognised or duplicate segment
+			segments = append(segments, seg)
 		}
 	}
 	if err := j.Err(); err != nil {
 		return err
 	}
 
-	// write chunks in standard jpeg/jfif header order
+	// write segments in standard jpeg/jfif header order
 	ww := errw{w: w}
-	ww.write(chunks[0])
+	ww.write(segments[0])
 	ww.write(jfifChunk)
 	ww.write(jfxxChunk)
 
@@ -110,9 +110,9 @@ func Copy(w io.Writer, r io.Reader, x *Exif) error {
 		}
 	}
 
-	// write other chunks in jpeg (DCT, COM, APP1/XMP...)
-	for _, chunk := range chunks[1:] {
-		ww.write(chunk)
+	// write other segments in jpeg (DCT, COM, APP1/XMP...)
+	for _, seg := range segments[1:] {
+		ww.write(seg)
 	}
 
 	if ww.err != nil {
@@ -140,18 +140,19 @@ func exifFromReader(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 
-	for j.Next() {
-		if !j.StartChunk() || !cmpChunkHeader(j.Bytes(), exifChunkHeader) {
+	prefix := exifChunkHeader[4:]
+	for j.NextChunk() {
+		if !j.IsChunk(0xe1, prefix) {
 			continue
 		}
 
-		p, err := j.ReadChunk()
+		_, p, err := j.ReadChunk()
 		if err != nil {
 			return nil, err
 		}
 
 		// trim exif header
-		return p[len(exifChunkHeader):], nil
+		return p[len(prefix):], nil
 	}
 
 	err = j.Err()

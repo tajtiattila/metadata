@@ -1,7 +1,6 @@
 package jpeg_test
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -17,20 +16,16 @@ func ExampleScanner() {
 		return
 	}
 
-	for scanner.Next() {
-		if !scanner.StartChunk() {
-			continue
-		}
-
-		p := scanner.Bytes()
-		if len(p) > 4 && bytes.HasPrefix(p[4:], []byte("Exif\x00\x00")) {
-			p, err = scanner.ReadChunk()
+	for scanner.NextChunk() {
+		const app1 = 0xe1
+		if scanner.IsChunk(app1, []byte("Exif\x00\x00")) {
+			_, p, err := scanner.ReadChunk()
 			if err != nil {
 				break
 			}
 
 			// do something with exif
-			fmt.Printf("% .2x", p[4:])
+			fmt.Printf("% .32x", p)
 		}
 	}
 
@@ -50,20 +45,17 @@ func ExampleScanner_copy() {
 
 	var werr error
 	for werr == nil && scanner.Next() {
-		p, err := scanner.ReadChunk()
-		if err != nil {
-			break
-		}
-
 		const app1 = 0xe1
-		if len(p) > 4 && p[0] == 0xff && p[1] == app1 &&
-			bytes.HasPrefix(p[4:], []byte("Exif\x00\x00")) {
+		if scanner.IsChunk(app1, []byte("Exif\x00\x00")) {
+			// read the Exif
+			_, exif, err := scanner.ReadChunk()
+			if err != nil {
+				break
+			}
 
-			exif := p[4:]
+			// do something with the Exif
 
-			// do something with exif
-
-			// write new exif
+			// write new Exif
 			werr = jpeg.WriteChunk(output, app1, exif)
 		} else {
 			// copy other data from source

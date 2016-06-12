@@ -38,7 +38,7 @@ func testParse(t *testing.T, e testutil.FileInfo) {
 
 	f, err := os.Open(fn)
 	if err != nil {
-		t.Errorf("Open %s: error %v", fn, err)
+		t.Errorf("Open %s error: %v", fn, err)
 		return
 	}
 	defer f.Close()
@@ -49,7 +49,7 @@ func testParse(t *testing.T, e testutil.FileInfo) {
 			// format not (yet?) supported
 			return
 		}
-		t.Errorf("metadata.Parse %s: error %v", fn, err)
+		t.Errorf("metadata.Parse %s error: %v", fn, err)
 		f.Seek(0, 0)
 		dumpJpeg(t, f)
 		return
@@ -63,7 +63,7 @@ var jpegXMPPfx = []byte("http://ns.adobe.com/xap/1.0/\x00")
 func dumpJpeg(t *testing.T, r io.Reader) {
 	j, err := xjpeg.NewScanner(r)
 	if err != nil {
-		t.Error("jpeg.NewScanner:", err)
+		t.Error("jpeg.NewScanner error:", err)
 		return
 	}
 
@@ -95,9 +95,9 @@ func dumpJpeg(t *testing.T, r io.Reader) {
 			trim, f, kind = len(jpegXMPPfx), xmpf, "xmp"
 		}
 
-		p, err := j.ReadChunk()
+		p, err := j.ReadSegment()
 		if err != nil {
-			t.Error("jpeg.Scanner.ReadChunk:", err)
+			t.Error("jpeg.Scanner.ReadChunk error:", err)
 			return
 		}
 
@@ -115,7 +115,7 @@ func dumpJpeg(t *testing.T, r io.Reader) {
 func dumpExifBytes(t *testing.T, p []byte) {
 	_, err := exif.DecodeBytes(p)
 	if err != nil {
-		t.Error("exif.Decode:", err)
+		t.Error("exif.Decode error:", err)
 		return
 	}
 }

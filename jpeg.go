@@ -1,7 +1,6 @@
 package metadata
 
 import (
-	"bytes"
 	"io"
 	"log"
 
@@ -18,11 +17,7 @@ func parseJpeg(r io.Reader) (*Metadata, error) {
 	}
 
 	var ex, xmp []byte
-	for (ex == nil || xmp == nil) && j.Next() {
-		if !j.StartChunk() {
-			continue
-		}
-
+	for (ex == nil || xmp == nil) && j.NextChunk() {
 		p := j.Bytes()
 		if len(p) < 4 || p[0] != 0xff || p[1] != 0xe1 {
 			continue
@@ -31,9 +26,9 @@ func parseJpeg(r io.Reader) (*Metadata, error) {
 		var pdata *[]byte
 		var trim int
 		switch {
-		case ex == nil && bytes.HasPrefix(p[4:], jpegExifPfx):
+		case ex == nil && j.IsChunk(0xe1, jpegExifPfx):
 			pdata, trim = &ex, len(jpegExifPfx)
-		case xmp == nil && bytes.HasPrefix(p[4:], jpegXMPPfx):
+		case xmp == nil && j.IsChunk(0xe1, jpegXMPPfx):
 			pdata, trim = &xmp, len(jpegXMPPfx)
 		}
 
@@ -41,12 +36,12 @@ func parseJpeg(r io.Reader) (*Metadata, error) {
 			continue
 		}
 
-		p, err := j.ReadChunk()
+		_, p, err := j.ReadChunk()
 		if err != nil {
 			return nil, err
 		}
 
-		*pdata = p[trim+4:]
+		*pdata = p[trim:]
 	}
 
 	if ex == nil && xmp == nil {
