@@ -49,11 +49,11 @@ func FromExif(x *exif.Exif) *Metadata {
 	return m
 }
 
-const LocalTimeFmt = "2006-01-02T15:04:05.999999999"
-
 func fmtTime(t time.Time, islocal bool) string {
-	if islocal {
-		return t.Format(LocalTimeFmt)
+	x := Time{
+		Time:   t,
+		Prec:   6, // seconds
+		HasLoc: !islocal,
 	}
-	return t.Format(time.RFC3339Nano)
+	return x.String()
 }

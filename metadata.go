@@ -1,3 +1,6 @@
+// Package metadata parses metadata in media files.
+//
+// Currently metadata in JPEG (Exif and XMP) and MP4 (XMP) formats are supported.
 package metadata
 
 import (
@@ -7,18 +10,19 @@ import (
 	"io"
 )
 
-// Attribute names read from EXIF
+// Attribute names read from media files.
 //
 // Date/time values are formatted as expected by
 // the Time type of this package.
 const (
-	// Note: Exif has no standard way to specify time zone,
-	// GPS location can be used to deduce it. From Exif the corresponding
-	// SubSecTime is included in the values reported.
-	DateTimeOriginal = "DateTimeOriginal" // date of original image (eg. scanned photo)
-	DateTimeCreated  = "DateTimeCreated"  // original file creation date (eg. time of scan)
+	// date of original image (eg. scanned photo)
+	DateTimeOriginal = "DateTimeOriginal"
 
-	GPSDateTime = "GPSDateTime" // Date/time of GPS fix (RFC3339, always UTC)
+	// original file creation date (eg. time of scan)
+	DateTimeCreated = "DateTimeCreated"
+
+	// Date/time of GPS fix (RFC3339, always UTC)
+	GPSDateTime = "GPSDateTime"
 
 	// latitude and longitude are signed floating point
 	// values formatted with no exponent
@@ -31,8 +35,9 @@ const (
 	// XMP Rating (integer), -1: rejected, 0: unrated, 1..5: user rating
 	Rating = "Rating"
 
-	Make  = "Make"  // recording equipment manufacturer name
-	Model = "Model" // recording equipment model name or number
+	// recording equipment manufacturer and model name/number name
+	Make  = "Make"
+	Model = "Model"
 )
 
 type Metadata struct {
@@ -40,23 +45,30 @@ type Metadata struct {
 	Attr map[string]string
 }
 
-func (m *Metadata) Set(name, value string) {
+// Set sets a metadata attribute.
+func (m *Metadata) Set(key, value string) {
 	if m.Attr == nil {
 		m.Attr = make(map[string]string)
 	}
-	m.Attr[name] = value
+	m.Attr[key] = value
 }
 
-func (m *Metadata) Get(name string) string {
-	return m.Attr[name]
+// Get returns a metadata attribute.
+func (m *Metadata) Get(key string) string {
+	return m.Attr[key]
 }
 
+// ErrUnknownFormat is returned by Parse and ParseAt when the file format
+// is not understood by this package.
 var ErrUnknownFormat = errors.New("metadata: unknown content format")
+
+// ErrNoMeta is returned by Parse and ParseAt when the file format
+// was recognised but no metadata was found.
 var ErrNoMeta = errors.New("metadata: no metadata found")
 
 const sniffLen = 256
 
-// Parse parses metadata from r. Currently EXIF and MP4 headers are supported.
+// Parse parses metadata from r.
 // If r is also an io.Seeker, then it is used to seek within r.
 func Parse(r io.Reader) (*Metadata, error) {
 	p := make([]byte, sniffLen)
@@ -146,13 +158,13 @@ func timeBetter(val, than string) bool {
 
 	v := ParseTime(val)
 	vscore := v.Prec
-	if v.Prec > 3 && v.ZoneKnown {
+	if v.Prec > 3 && v.HasLoc {
 		vscore += zoneScore
 	}
 
 	t := ParseTime(than)
 	tscore := t.Prec
-	if t.Prec > 3 && t.ZoneKnown {
+	if t.Prec > 3 && t.HasLoc {
 		tscore += zoneScore
 	}
 

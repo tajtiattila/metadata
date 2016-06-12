@@ -1,3 +1,4 @@
+// Package jpeg implenments a JPEG scanner.
 package jpeg
 
 import (
@@ -177,15 +178,20 @@ func (j *Scanner) Next() bool {
 }
 
 // StartChunk returns true if the last call to Next()
-// found a chunk in the stream.
+// found chunked data in the stream.
 func (j *Scanner) StartChunk() bool {
+	// TODO: replace with test of j.p; there is no need for another
 	return j.startChunk
 }
 
 // ReadChunk reads the current chunk data the into a new slice
 // after calling Next.
-// If no new chunk has been found, it returns the padding between
-// chunks.
+// The returned slice will always have a prefix of Bytes().
+//
+// The first four bytes are chunk header which contains the
+// the marker header (0xff and another byte), and the two-byte length.
+//
+// If no new chunk has been found, ReadChunk() returns Bytes().
 func (j *Scanner) ReadChunk() ([]byte, error) {
 	if j.err != nil {
 		return nil, j.err

@@ -4,27 +4,31 @@ import "time"
 
 // Time is like time.Time but records the precision
 // (year, month, day, hout, minute, second or subsecond)
-// from the parsed value and whether a time zone was
+// of the parsed string and whether a time zone was
 // specified.
+//
+// Certain metadata formats has limited time representations:
+//
+// MVHD in MP4 is unix(ish) time lacking time zone information.
+//
+// Exif has a fixed standard time layout without a time zone.
+// Certain tools can write time zone information to Exif date fields,
+// but such Exif files are technically invalid.
+//
+// XMP uses the time format understood by ParseTime, but omitting
+// elements from the end of the string is optional.
 type Time struct {
 	// Actual time value.
-	// Its location is time.Local if ZoneKnown is false.
+	// Its location is always time.Local if HasLoc is false.
 	time.Time
 
-	// Prec records the number of valid components
-	// from the beginning of the RFC3339 format:
-	//  0: invalid
-	//  1: yyyy
-	//  2: yyyy-mm
-	//  3: yyyy-mm-dd
-	//  4: yyyy-mm-ddThh
-	//  5: yyyy-mm-ddThh:mm
-	//  6: yyyy-mm-ddThh:mm:ss
-	//  7: yyyy-mm-ddThh:mm:ss.ss
+	// Prec records the number of valid components of the parsed
+	// value between 1 (year) and 7 (subsecond).
+	// A Time with Prec == 0 is invalid.
 	Prec int
 
-	// ZoneKnown is true if source has a specific time zone.
-	ZoneKnown bool
+	// HasLoc records whether the parsed value included a time zone.
+	HasLoc bool
 }
 
 // ParseTime parses a time string based on the RFC 3339 format,
@@ -57,19 +61,19 @@ func ParseTime(s string) Time {
 	loc := tp.loc()
 
 	return Time{
-		Time:      time.Date(year, time.Month(month), day, hour, min, sec, nsec, loc),
-		Prec:      tp.prec,
-		ZoneKnown: tp.zoneknown,
+		Time:   time.Date(year, time.Month(month), day, hour, min, sec, nsec, loc),
+		Prec:   tp.prec,
+		HasLoc: tp.hasLoc,
 	}
 }
 
 // In returns t with the location information set to loc.
-// If t.ZoneKnown was false, the time.Time of the result will have
-// the same Date() and Clock() as before and its ZoneKnown set.
+// If t.HasLoc was false, the time.Time of the result will have
+// the same Date() and Clock() as before and its HasLoc set.
 //
 // In panics if loc is nil.
 func (t Time) In(loc *time.Location) Time {
-	if t.ZoneKnown {
+	if t.HasLoc {
 		t.Time = t.Time.In(loc)
 		return t
 	}
@@ -80,16 +84,48 @@ func (t Time) In(loc *time.Location) Time {
 	t.Time = t.Time.In(loc)
 	_, o1 := t.Time.Zone()
 	t.Time = t.Time.Add(time.Duration(o0-o1) * time.Second)
-	t.ZoneKnown = true
+	t.HasLoc = true
 	return t
+}
+
+var precLayout = []string{
+	"2006",
+	"2006-01",
+	"2006-01-02",
+	"2006-01-02T15",
+	"2006-01-02T15:04",
+	"2006-01-02T15:04:05",
+}
+
+// String returns t as understood by ParseTime.
+func (t Time) String() string {
+	var layout string
+	switch {
+	case t.Prec <= 0:
+		return ""
+	case 0 < t.Prec && t.Prec < 7:
+		layout = precLayout[t.Prec-1]
+	default:
+		if t.Time.Nanosecond() == 0 {
+			// time.Time.Format would omit the nanosecond
+			// part, therefore ".0" is needed to keep the precision.
+			layout = "2006-01-02T15:04:05.0"
+		} else {
+			layout = "2006-01-02T15:04:05.999999999"
+		}
+	}
+	if t.HasLoc {
+		layout += "Z07:00"
+	}
+	return t.Time.Format(layout)
 }
 
 type timeParser struct {
 	p string
 	r int
 
-	prec      int
-	zoneknown bool
+	prec   int
+	hasLoc bool
 
 	done bool
 }
@@ -163,7 +199,7 @@ func (p *timeParser) loc() *time.Location {
 	} {
 		t, err := time.Parse(l, p.p[p.r:])
 		if err == nil {
-			p.zoneknown = true
+			p.hasLoc = true
 			return t.Location()
 		}
 	}

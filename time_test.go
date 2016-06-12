@@ -31,8 +31,8 @@ func TestParseTime(t *testing.T) {
 
 func testParseTime(t *testing.T, s, w string, prec int, zone bool) {
 	got := ParseTime(s)
-	if got.ZoneKnown != zone {
-		t.Errorf("testParseTime %s ZoneKnown got %v != want %v", s, got.ZoneKnown, zone)
+	if got.HasLoc != zone {
+		t.Errorf("testParseTime %s HasLoc got %v != want %v", s, got.HasLoc, zone)
 	}
 
 	var want time.Time
@@ -60,8 +60,8 @@ func testParseTimeZero(t *testing.T, s string) {
 	if !got.Time.IsZero() {
 		t.Errorf("ParseTime(%q) got %v, should be zero", s, got.Time)
 	}
-	if got.ZoneKnown {
-		t.Errorf("ParseTime(%q) got ZoneKnown=true, want false", s)
+	if got.HasLoc {
+		t.Errorf("ParseTime(%q) got HasLoc=true, want false", s)
 	}
 	if got.Prec != 0 {
 		t.Errorf("ParseTime(%q) got Prec=%d, want 0", s, got.Prec)
@@ -87,8 +87,8 @@ func TestTimeIn(t *testing.T) {
 func testTimeIn(t *testing.T, y int, month time.Month, d, h, min, s int, l0, l1 *time.Location) {
 	src := Time{time.Date(y, month, d, h, min, s, 0, l0), 6, false}
 	got := src.In(l1)
-	if !got.ZoneKnown {
-		t.Error("Time.In didn't set ZoneKnown")
+	if !got.HasLoc {
+		t.Error("Time.In didn't set HasLoc")
 	}
 
 	sY, sM, sD := src.Date()
