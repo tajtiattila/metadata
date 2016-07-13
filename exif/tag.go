@@ -67,6 +67,11 @@ type Tag struct {
 	E Entry
 }
 
+func (t *Tag) String() string {
+	f := Formatter{t.ByteOrder}
+	return f.Value(t.E.Type, t.E.Count, t.E.Value)
+}
+
 // Tag returns true if t exists and its Type and Count are valid.
 func (t *Tag) Valid() bool {
 	if t == nil || t.ByteOrder == nil {
