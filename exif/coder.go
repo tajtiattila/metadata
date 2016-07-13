@@ -137,6 +137,10 @@ func DecodeBytes(p []byte) (*Exif, error) {
 //
 // To store the Exif within an image, use Copy instead.
 func (x *Exif) EncodeBytes() ([]byte, error) {
+	return x.encodeBytes(nil)
+}
+
+func (x *Exif) encodeBytes(prefix []byte) ([]byte, error) {
 	// prepare sub-IFDs
 	subifd := []struct {
 		idx int // within IFD0
@@ -240,7 +244,9 @@ Outer:
 	}
 	suboffset += len(thumb)
 
-	p := make([]byte, 8+suboffset)
+	res := make([]byte, len(prefix)+8+suboffset)
+	n := copy(res, prefix)
+	p := res[n:]
 
 	// write header
 	switch bo {
@@ -273,11 +279,11 @@ Outer:
 	// write thumb
 	copy(p[offset:offset+len(thumb)], thumb)
 
-	if len(p) > 65533 {
-		return p, ErrTooLong
+	if len(res) > 65533 {
+		return res, ErrTooLong
 	}
 
-	return p, nil
+	return res, nil
 }
 
 // Dir represents an Image File Directory (IFD) within Exif.

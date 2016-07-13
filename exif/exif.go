@@ -61,7 +61,7 @@ func Copy(w io.Writer, r io.Reader, x *Exif) error {
 	var exifdata []byte
 	if x != nil {
 		var err error
-		exifdata, err = x.EncodeBytes()
+		exifdata, err = x.encodeBytes([]byte("Exif\x00\x00"))
 		if err != nil {
 			return err
 		}
