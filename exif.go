@@ -18,10 +18,13 @@ func FromExifBytes(p []byte) (*Metadata, error) {
 
 func FromExif(x *exif.Exif) *Metadata {
 	m := new(Metadata)
-	lat, lon, hasloc := x.LatLong()
-	if hasloc {
-		m.Set(GPSLatitude, fmt.Sprintf("%f", lat))
-		m.Set(GPSLongitude, fmt.Sprintf("%f", lon))
+
+	if i, ok := x.GPSInfo(); ok {
+		m.Set(GPSLatitude, fmt.Sprintf("%f", i.Lat))
+		m.Set(GPSLongitude, fmt.Sprintf("%f", i.Long))
+		if !i.Time.IsZero() {
+			m.Set(GPSDateTime, fmtTime(i.Time, false))
+		}
 	}
 
 	if t, islocal, ok := x.Time(exiftag.DateTimeOriginal, exiftag.SubSecTimeOriginal); ok {
@@ -29,10 +32,6 @@ func FromExif(x *exif.Exif) *Metadata {
 	}
 	if t, islocal, ok := x.Time(exiftag.DateTimeDigitized, exiftag.SubSecTimeDigitized); ok {
 		m.Set(DateTimeCreated, fmtTime(t, islocal))
-	}
-
-	if t, ok := x.GPSDateTime(); ok {
-		m.Set(GPSDateTime, fmtTime(t, false))
 	}
 
 	if o := x.Tag(exiftag.Orientation).Short(); len(o) > 1 {

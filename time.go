@@ -97,7 +97,7 @@ var precLayout = []string{
 	"2006-01-02T15:04:05",
 }
 
-// String returns t as understood by ParseTime.
+// String formats t using the layout understood by ParseTime.
 func (t Time) String() string {
 	var layout string
 	switch {
@@ -108,7 +108,8 @@ func (t Time) String() string {
 	default:
 		if t.Time.Nanosecond() == 0 {
 			// time.Time.Format would omit the nanosecond
-			// part, therefore ".0" is needed to keep the precision.
+			// part with ".9", therefore ".0" is needed
+			// to keep the precision.
 			layout = "2006-01-02T15:04:05.0"
 		} else {
 			layout = "2006-01-02T15:04:05.999999999"

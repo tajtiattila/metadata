@@ -83,6 +83,87 @@ func (x *Exif) SetDateTime(t time.Time) {
 	x.Set(exiftag.SubSecTime, subv)
 }
 
+// GPSInfo represents GPS information within Exif.
+type GPSInfo struct {
+	// Version of the GPS IFD.
+	Version []byte
+
+	// Lat and Long are the GPS position in degrees.
+	Lat, Long float64
+
+	// Alt is the altitude in meters above sea level.
+	// Negative values mean altitude below sea level.
+	Alt struct {
+		Float64 float64
+		Valid   bool
+	}
+
+	// Time specifies the time of the (last) GPS fix.
+	Time time.Time
+
+	// TODO: add more fields as needed
+}
+
+// GPSInfo returns GPS data from x.
+// It returns ok == true if least latitude and longitude
+// values are present.
+func (x *Exif) GPSInfo() (i GPSInfo, ok bool) {
+	i.Version = x.Tag(exiftag.GPSVersionID).Byte()
+
+	i.Lat, i.Long, ok = x.LatLong()
+	if !ok {
+		return GPSInfo{}, false
+	}
+
+	i.Alt.Float64, i.Alt.Valid = x.altitude()
+
+	i.Time, _ = x.gpsDateTime()
+
+	return i, true
+}
+
+// SetGPSInfo sets the GPS data in x.
+// If i.Version is nil, then Byte{2, 2, 0, 0} is used.
+// If i.Alt.Valid is false or i.Time.IsZero() is true
+// then the corresponding tags will be removed from x.
+func (x *Exif) SetGPSInfo(i GPSInfo) {
+	v := i.Version
+	if v == nil {
+		v = []byte{2, 2, 0, 0}
+	}
+	x.Set(exiftag.GPSVersionID, Byte(v))
+
+	x.setLatLong(i.Lat, i.Long)
+
+	if i.Alt.Valid {
+		var ref Byte
+		f := i.Alt.Float64
+		if f < 0 {
+			ref = Byte{1}
+			f = -f
+		} else {
+			ref = Byte{0}
+		}
+
+		var m uint32
+		if _, frac := math.Modf(f); frac < 1e-3 {
+			m = 1 // meters
+		} else {
+			m = 1000 // millimeters
+		}
+
+		alt := Rational{uint32(f*float64(m) + 0.5), m}
+
+		x.Set(exiftag.GPSAltitudeRef, ref)
+		x.Set(exiftag.GPSAltitude, alt)
+	} else {
+		x.Set(exiftag.GPSAltitudeRef, nil)
+		x.Set(exiftag.GPSAltitude, nil)
+	}
+
+	x.setGPSDateTime(i.Time)
+}
+
 // LatLong reports the GPS latitude and longitude.
 func (x *Exif) LatLong() (lat, long float64, ok bool) {
 	latsig, ok1 := locSig(x.Tag(exiftag.GPSLatitudeRef), "N", "S")
@@ -96,10 +177,9 @@ func (x *Exif) LatLong() (lat, long float64, ok bool) {
 	return 0, 0, false
 }
 
-// SetLatLong sets the GPS latitude and longitude.
-func (x *Exif) SetLatLong(lat, lon float64) {
+// setLatLong sets the GPS latitude and longitude.
+func (x *Exif) setLatLong(lat, lon float64) {
 
-	x.Set(exiftag.GPSVersionID, Byte{2, 2, 0, 0})
 	var latsig string
 	if lat < 0 {
 		latsig = "S"
@@ -122,7 +202,23 @@ func (x *Exif) SetLatLong(lat, lon float64) {
 	x.Set(exiftag.GPSLongitude, toDegHourMin(lon))
 }
 
-func (x *Exif) GPSDateTime() (t time.Time, ok bool) {
+func (x *Exif) altitude() (alt float64, ok bool) {
+	altr := x.Tag(exiftag.GPSAltitude).Rational()
+	if len(altr) != 2 {
+		return 0, false
+	}
+
+	alt = float64(altr[0]) / float64(altr[1])
+
+	// permit missing AltitudeRef, but use it for the sign if it exists.
+	if ar := x.Tag(exiftag.GPSAltitudeRef).Byte(); len(ar) == 1 && ar[0] == 1 {
+		alt *= -1
+	}
+
+	return alt, true
+}
+
+func (x *Exif) gpsDateTime() (t time.Time, ok bool) {
 	ds, ok := x.Tag(exiftag.GPSDateStamp).Ascii()
 	if !ok {
 		return time.Time{}, false
@@ -141,8 +237,31 @@ func (x *Exif) GPSDateTime() (t time.Time, ok bool) {
 	return d.Add(time.Duration(tlo) * time.Nanosecond), true
 }
 
-const TimeFormat = "2006:01:02T15:04:05"
-const exTimeFormat = "2006:01:02T15:04:05Z"
+func (x *Exif) setGPSDateTime(t time.Time) {
+	if t.IsZero() {
+		x.Set(exiftag.GPSDateStamp, nil)
+		x.Set(exiftag.GPSTimeStamp, nil)
+		return
+	}
+
+	// GPS time is always UTC.
+	t = t.UTC()
+
+	x.Set(exiftag.GPSDateStamp, Ascii(t.Format("2006:01:02")))
+
+	h, m, s := t.Clock()
+
+	sn, sd := uint32(s), uint32(1)
+
+	// use microsecond precision to avoid uint32 overflow
+	if us := t.Nanosecond() / 1000; us != 0 {
+		sn, sd = sn*1e6+uint32(us), 1e6
+	}
+
+	x.Set(exiftag.GPSTimeStamp, Rational{uint32(h), 1, uint32(m), 1, sn, sd})
+}
+
+const TimeFormat = "2006:01:02 15:04:05"
 
 func timeFromTags(t, subt *Tag) (tm time.Time, islocal, ok bool) {
 	tm, islocal, ok = timePart(t)
@@ -177,20 +296,27 @@ func timePart(t *Tag) (tm time.Time, islocal, ok bool) {
 		return
 	}
 
-	tm, err := time.Parse(exTimeFormat, tms)
-	if err == nil {
-		return tm, false, true
+	formats := []struct {
+		layout  string
+		islocal bool
+	}{
+		{"2006:01:02 15:04:05Z", false},
+		{"2006:01:02T15:04:05Z", false},
+		{TimeFormat, true},
+		{"2006:01:02T15:04:05", true},
 	}
 
-	tm, err = time.ParseInLocation(TimeFormat, tms, time.Local)
-	if err != nil {
-		return tm, true, true
-	}
-
-	// parse prefix
-	tm, err = time.ParseInLocation(TimeFormat, tms[:len(TimeFormat)], time.Local)
-	if err == nil {
-		return tm, true, true
+	for _, e := range formats {
+		var tm time.Time
+		var err error
+		if e.islocal {
+			tm, err = time.ParseInLocation(e.layout, tms, time.Local)
+		} else {
+			tm, err = time.Parse(e.layout, tms)
+		}
+		if err == nil {
+			return tm, e.islocal, true
+		}
 	}
 
 	return time.Time{}, false, false
