@@ -7,7 +7,7 @@ import (
 	"io"
 	"math"
 
-	"github.com/tajtiattila/exif-go/exif/exiftag"
+	"github.com/tajtiattila/metadata/exif/exiftag"
 )
 
 func Fdump(w io.Writer, x *Exif) {

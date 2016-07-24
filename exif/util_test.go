@@ -7,7 +7,7 @@ import (
 	"image/jpeg"
 	"testing"
 
-	"github.com/tajtiattila/exif-go/exif"
+	"github.com/tajtiattila/metadata/exif"
 )
 
 func TestNewImageLatLong(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"image"
 	"image/jpeg"
 
-	"github.com/tajtiattila/exif-go/exif/exiftag"
+	"github.com/tajtiattila/metadata/exif/exiftag"
 )
 
 var (

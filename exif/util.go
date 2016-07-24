@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/tajtiattila/exif-go/exif/exiftag"
+	"github.com/tajtiattila/metadata/exif/exiftag"
 )
 
 // New initializes a new Exif structure for an image
@@ -162,6 +162,14 @@ func (x *Exif) SetGPSInfo(i GPSInfo) {
 	}
 
 	x.setGPSDateTime(i.Time)
+}
+
+// SetLatLong sets GPS latitude and longitude in x.
+func (x *Exif) SetLatLong(lat, long float64) {
+	x.SetGPSInfo(GPSInfo{
+		Lat:  lat,
+		Long: long,
+	})
 }
 
 // LatLong reports the GPS latitude and longitude.
