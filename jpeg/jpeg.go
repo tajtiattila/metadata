@@ -344,7 +344,7 @@ func chunkLen(p []byte) int {
 }
 
 func WriteChunk(w io.Writer, marker byte, chunkdata []byte) error {
-	n := len(chunkdata) + 4
+	n := len(chunkdata) + 2
 	if n > 65535 {
 		return ErrTooLong
 	}
