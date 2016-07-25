@@ -14,7 +14,7 @@ var (
 
 // Tag returns the Tag t.
 //
-// Tag is not valid if it is not present in x.
+// An invalid tag is returned if t is not present in x.
 //
 // The value of (name & exiftag.DirMask) must be one
 // of exiftag.{Tiff, Exif, GPS, Interop} otherwise
@@ -27,7 +27,7 @@ func (x *Exif) Tag(t uint32) *Tag {
 	return &Tag{x.ByteOrder, *e}
 }
 
-// Set sets the value of t in x to v.
+// Set sets the value of Exif tag t in x to v.
 //
 // If v is nil, t is removed from x.
 // Otherwise the Entry for t is created if it is not present in x.
