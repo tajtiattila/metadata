@@ -46,7 +46,7 @@ func New(dx, dy int) *Exif {
 
 // Time reports the time from the specified DateTime and SubSecTime tags.
 func (x *Exif) Time(timeTag, subSecTag uint32) (t time.Time, islocal, ok bool) {
-	return timeFromTags(x.Tag(exiftag.DateTimeOriginal), x.Tag(exiftag.SubSecTimeOriginal))
+	return timeFromTags(x.Tag(timeTag), x.Tag(subSecTag))
 }
 
 // DateTime reports the Exif datetime. The fields checked
