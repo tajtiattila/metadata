@@ -3,6 +3,7 @@ package exif
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"sort"
 )
 
@@ -18,10 +19,8 @@ const (
 )
 
 var (
+	// ErrCorruptHeader is returned if the Exif header is corrupt.
 	ErrCorruptHeader = errors.New("exif: corrupt header")
-	ErrCorruptDir    = errors.New("exif: corrupt IFD")
-	ErrCorruptTag    = errors.New("exif: corrupt IFD tag")
-	ErrDuplicateSub  = errors.New("exif: duplicate sub-IFD entry")
 
 	// ErrEmpty is returned when x.Encode is used with no exif data to encode.
 	ErrEmpty = errors.New("exif: nothing to encode")
@@ -56,27 +55,34 @@ func DecodeBytes(p []byte) (*Exif, error) {
 	// location of IFD0 offset
 	offset := 4
 
+	var h errh
+
 	var d []Dir
-	var err error
 	for {
 		if len(p) < offset+4 {
-			// offset points outside exif
-			return nil, ErrCorruptDir
+			// offset points outside Exif
+			if len(d) == 0 {
+				// error in IFD0, nothing useful found
+				return nil, fmt.Errorf("Exif: no room for IFD0 offset at byte %d", offset)
+			}
+			h.warnf("no room for IFD%d offset at byte %d", len(d), offset)
+			break
 		}
 		ptr := int(bo.Uint32(p[offset:]))
 		if ptr == 0 {
 			break
 		}
-		if ptr < 0 || len(p) < ptr {
+		if ptr < 0 || len(p) < ptr+2 {
 			// corrupt IFD offset in header
-			return nil, ErrCorruptDir
+			if len(d) == 0 {
+				return nil, fmt.Errorf("Exif: invalid IFD0 pointer %d at offset %d", ptr, offset)
+			}
+			h.warnf("invalid IFD%d pointer %d at offset %d", len(d), ptr, offset)
+			break
 		}
 
 		var dir Dir
-		dir, offset, err = decodeDir(bo, p, ptr)
-		if err != nil {
-			return nil, err
-		}
+		dir, offset = h.decodeDir(bo, p, ptr)
 		d = append(d, dir)
 	}
 
@@ -103,21 +109,20 @@ func DecodeBytes(p []byte) (*Exif, error) {
 		}
 		if *psub != nil {
 			// sub-IFD already loaded
-			return nil, ErrDuplicateSub
+			h.warnf("duplicate sub-IFD Tag %x", t.Tag)
+			continue
 		}
 		if t.Type != TypeLong {
-			// pointer must be a long
-			return nil, ErrCorruptTag
+			h.warnf("invalid sub-IFD type %d in Tag %x", t.Type, t.Tag)
+			continue
 		}
 		ptr := int(bo.Uint32(t.Value))
-		if ptr < 0 || len(p) < ptr {
+		if ptr < 0 || len(p) < ptr+2 {
 			// invalid pointer
-			return nil, ErrCorruptTag
+			h.warnf("invalid sub-IFD pointer %d in Tag %x", ptr, t.Tag)
+			continue
 		}
-		subdir, _, err := decodeDir(bo, p, ptr)
-		if err != nil {
-			return nil, err
-		}
+		subdir, _ := h.decodeDir(bo, p, ptr)
 		*psub = subdir
 	}
 
@@ -128,7 +133,7 @@ func DecodeBytes(p []byte) (*Exif, error) {
 		copy(x.Thumb, p[tofs:tofs+tlen])
 	}
 
-	return x, nil
+	return x, h.Error()
 }
 
 // EncodeBytes encodes Exif data as a byte slice.
@@ -286,23 +291,37 @@ Outer:
 	return res, nil
 }
 
-// Dir represents an Image File Directory (IFD) within Exif.
-// It is a directory of raw tagged fields, also named entries.
-type Dir []Entry
+type errh struct {
+	msg []string
+}
 
-func decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int, error) {
-	if len(p) < offset+2 {
-		return nil, 0, ErrCorruptDir
+func (h *errh) warnf(format string, arg ...interface{}) {
+	h.msg = append(h.msg, fmt.Sprintf(format, arg...))
+}
+
+func (h *errh) Error() error {
+	if len(h.msg) == 0 {
+		return nil
 	}
+	return FormatError(h.msg)
+}
+
+func (h *errh) decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int) {
 	ntags := int(bo.Uint16(p[offset:]))
 	offset += 2
+
+	const bytesPerTag = 12
+	end := offset + ntags*bytesPerTag
+
+	ntagsPossible := (len(p) - offset) / bytesPerTag
+	if ntags > ntagsPossible {
+		h.warnf("IFD has %d tags but input has room only for %d", ntags, ntagsPossible)
+		ntags = ntagsPossible
+	}
 
 	var tags []Entry
 	for i := 0; i < ntags; i++ {
 		// decode entry header
-		if len(p) < offset+12 {
-			return nil, 0, ErrCorruptTag
-		}
 		tag := bo.Uint16(p[offset:])
 		typ := bo.Uint16(p[offset+2:])
 		count := bo.Uint32(p[offset+4:])
@@ -313,7 +332,7 @@ func decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int, error) {
 
 		switch {
 		case nbytes <= 0:
-			// leave corrupt entry alone don't try to decode alone
+			// leave corrupt entry alone
 		case nbytes <= 4:
 			valuebits = valuebits[:nbytes]
 		default:
@@ -323,7 +342,8 @@ func decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int, error) {
 			n := int(nbytes)
 			valueoffset := int(bo.Uint32(valuebits))
 			if valueoffset < 0 || len(p) < valueoffset+n {
-				return nil, 0, ErrCorruptDir
+				h.warnf("corrupt offset %d for Tag %x", valueoffset, tag)
+				continue
 			}
 			valuebits = p[valueoffset : valueoffset+n]
 		}
@@ -345,8 +365,12 @@ func decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int, error) {
 	d := Dir(tags)
 	d.Sort()
 
-	return d, offset, nil
+	return d, end
 }
+
+// Dir represents an Image File Directory (IFD) within Exif.
+// It is a directory of raw tagged fields, also named entries.
+type Dir []Entry
 
 func (d Dir) encodedLen(subIfd bool) int {
 	// tags
@@ -404,7 +428,7 @@ func (d Dir) encode(bo binary.ByteOrder, p []byte, offset int, subIfd, hasNext b
 // Sort sorts entries according to tag values, as needed by Tag() and Index().
 //
 // Tags should appear sorted according to TIFF spec, therefore
-// the functions of this package keep Dirs are always sorted.
+// functions of this package always keep Dirs sorted.
 func (d Dir) Sort() {
 	sort.Sort(dirSort(d))
 }

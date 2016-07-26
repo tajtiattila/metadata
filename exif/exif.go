@@ -4,6 +4,7 @@ package exif
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 
 	xjpeg "github.com/tajtiattila/metadata/jpeg"
@@ -29,6 +30,33 @@ type Exif struct {
 	// thumbnail
 	IFD1  Dir    // Metadata
 	Thumb []byte // Raw image data, typically JPEG
+}
+
+// FormatError holds warnings encountered by Decode or DecodeBytes if
+// (part of) the Exif succesfully decoded
+// but corrupt or invalid data were encountered.
+//
+// Clients only interested only in reading the Exif
+// may safely ignore a FormatError.
+type FormatError []string
+
+func (e FormatError) Error() string {
+	var extra string
+	if len(e) > 1 {
+		extra = "..."
+	}
+	return "exif: " + e[0] + extra
+}
+
+func (e *FormatError) warnf(format string, arg ...interface{}) {
+	*e = append(*e, fmt.Sprintf(format, arg...))
+}
+
+// IsFormat returns a boolean indicating whether the error is
+// a format error in Exif.
+func IsFormat(err error) bool {
+	_, is := err.(FormatError)
+	return is
 }
 
 // Decode decodes Exif data from r.
