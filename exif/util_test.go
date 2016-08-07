@@ -69,7 +69,6 @@ func TestNewImageLatLong(t *testing.T) {
 
 	xlat, xlon, ok := x.LatLong()
 	if !ok {
-		t.Log(exif.Sdump(x))
 		t.Fatal("exif has no lat/long")
 	}
 	if xlat != lat {

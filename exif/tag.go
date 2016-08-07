@@ -3,6 +3,7 @@ package exif
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/tajtiattila/metadata/exif/exiftag"
 )
@@ -67,9 +68,10 @@ type Tag struct {
 	E Entry
 }
 
+// String returns the representation of t.
 func (t *Tag) String() string {
 	f := Formatter{t.ByteOrder}
-	return f.Value(t.E.Type, t.E.Count, t.E.Value)
+	return fmt.Sprintf("%0x: %v", t.E.Tag, f.Value(t.E.Type, t.E.Count, t.E.Value))
 }
 
 // Tag returns true if t exists and its Type and Count are valid.

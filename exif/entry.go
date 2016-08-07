@@ -57,7 +57,19 @@ func entryFunc(bo binary.ByteOrder) func(t uint32, v Value) Entry {
 }
 
 func typeSize(t uint16, c uint32) int {
-	var e int64
+	e := int64(elemSize(t))
+	if e == 0 {
+		return -1
+	}
+	n := e * int64(c)
+	if 0 < n && n < 1<<31 {
+		return int(n)
+	}
+	return -1
+}
+
+func elemSize(t uint16) int {
+	var e int
 	switch t {
 	case TypeByte, TypeAscii, TypeUndef, TypeSByte:
 		e = 1
@@ -68,11 +80,7 @@ func typeSize(t uint16, c uint32) int {
 	case TypeRational, TypeSRational, TypeDouble:
 		e = 8
 	}
-	n := e * int64(c)
-	if 0 < n && n < 1<<31 {
-		return int(n)
-	}
-	return -1
+	return e
 }
 
 func fieldOfs(bo binary.ByteOrder, e *Entry) (value int, ok bool) {
