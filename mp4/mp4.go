@@ -109,6 +109,41 @@ func (f *File) AddUuid(data []byte) {
 	}
 }
 
+// FrameSize returns the frame size of f.
+func (f *File) FrameSize() (width, height int, err error) {
+	moov := f.Find("moov")
+	if moov == nil {
+		return 0, 0, formatError("mp4 without moov")
+	}
+
+	var firstErr error
+	var best int64
+	for _, b := range moov.Child {
+		if b.Type != "trak" {
+			continue
+		}
+		p := b.Find("tkhd")
+		if p == nil {
+			continue
+		}
+		hd, err := DecodeTKHD(p.Raw)
+		if err != nil {
+			if firstErr == nil {
+				err = formatError("decode TKHD error %v", err)
+			}
+		}
+		dx, dy := hd.FrameSize()
+		s := int64(dx) * int64(dy)
+		if s > best {
+			best, width, height = s, dx, dy
+		}
+	}
+	if (width == 0 || height == 0) && firstErr != nil {
+		return 0, 0, firstErr
+	}
+	return width, height, nil
+}
+
 func (f *File) replace(idx int, newBox Box) bool {
 	oldBox := f.Child[idx]
 
@@ -421,6 +456,10 @@ func wantBox(cc4 string) bool {
 	case "ftyp":
 		return true
 	case "moov":
+		return true
+	case "trak":
+		return true
+	case "tkhd":
 		return true
 	case "uuid":
 		return true

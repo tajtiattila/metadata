@@ -1,15 +1,14 @@
 package mp4
 
 import (
-	"encoding/binary"
 	"time"
 )
 
 type MVHD struct {
 	Version      byte
 	Flags        [3]byte
-	DateCreated  time.Time // value in seconds since beginning 1904 to 2040
-	DateModified time.Time // value in seconds since beginning 1904 to 2040
+	DateCreated  time.Time
+	DateModified time.Time
 
 	TimeUnit        uint32 // time unit per second (default = 600)
 	DurationInUnits uint64 // time length (in time units)
@@ -20,50 +19,29 @@ type MVHD struct {
 var ErrShortMVHD = formatError("MVHD too short")
 
 func DecodeMVHD(p []byte) (*MVHD, error) {
-	if len(p) < 20 {
+	m := new(MVHD)
+
+	bp := newBoxParse(p)
+
+	var err error
+	m.Version, m.Flags, err = bp.versionFlags()
+	if err != nil {
+		return nil, err
+	}
+
+	m.DateCreated = bp.Date()
+	m.DateModified = bp.Date()
+	m.TimeUnit = bp.Uint32()
+	m.DurationInUnits = bp.UintVar()
+
+	if bp.Short() {
 		return nil, ErrShortMVHD
 	}
 
-	m := new(MVHD)
-	m.Version = p[0]
-	copy(m.Flags[:], p[1:4])
-	i := 4
-
-	var getValue func() uint64
-
-	x := binary.BigEndian
-
-	switch p[0] {
-	case 0:
-		getValue = func() uint64 {
-			v := x.Uint32(p[i:])
-			i += 4
-			return uint64(v)
-		}
-	case 1:
-		if len(p) < 32 {
-			return nil, ErrShortMVHD
-		}
-		getValue = func() uint64 {
-			v := x.Uint64(p[i:])
-			i += 8
-			return v
-		}
-	default:
-		return nil, formatError("Unknown MVHD version %d", p[0])
-	}
-
-	// mac UTC date epoch
-	epoch := time.Date(1904, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	m.DateCreated = epoch.Add(time.Duration(getValue()) * time.Second)
-	m.DateModified = epoch.Add(time.Duration(getValue()) * time.Second)
-	m.TimeUnit, i = x.Uint32(p[i:]), i+4
-	m.DurationInUnits = getValue()
-
-	if i < len(p) {
-		m.Raw = make([]byte, len(p)-i)
-		copy(m.Raw, p[i:])
+	r := bp.Rest()
+	if len(r) != 0 {
+		m.Raw = make([]byte, len(r))
+		copy(m.Raw, r)
 	}
 	return m, nil
 }
