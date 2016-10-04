@@ -23,7 +23,6 @@ func Parse(r io.Reader) (*File, error) {
 		f: &File{
 			Box: Box{Type: "MP4", Size: -1},
 		},
-		tmp: make([]byte, 32*1024),
 	}
 	if err := p.Parse(); err != nil {
 		return nil, err
@@ -406,6 +405,9 @@ func (p *parser) skip(n int64) error {
 	if s, ok := p.r.(io.Seeker); ok {
 		_, err = s.Seek(n, 1)
 	} else {
+		if p.tmp == nil {
+			p.tmp = make([]byte, 32*1024)
+		}
 		_, err = io.CopyBuffer(ioutil.Discard, io.LimitReader(p.r, n), p.tmp)
 	}
 	if err == nil {
@@ -428,7 +430,7 @@ func wantBox(cc4 string) bool {
 
 // read next atom header
 func (p *parser) readAtomHeader() (b Box, err error) {
-	x := p.tmp[:8]
+	x := make([]byte, 8)
 	var n int
 	b.Offset = p.off
 	n, err = io.ReadFull(p.r, x)
