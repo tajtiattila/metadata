@@ -68,7 +68,14 @@ var ErrNoMeta = errors.New("metadata: no metadata found")
 
 const sniffLen = 256
 
-// Parse parses metadata from r.
+// Parse parses metadata from r, and returns the metadata found
+// and the first error encountered.
+//
+// Metadata is parsed on a best effort basis.
+// Valid values are always returned
+// even when if non-fatal errors had been encountered by decoding
+// the underlying formats.
+//
 // If r is also an io.Seeker, then it is used to seek within r.
 func Parse(r io.Reader) (*Metadata, error) {
 	p := make([]byte, sniffLen)
@@ -85,6 +92,13 @@ func Parse(r io.Reader) (*Metadata, error) {
 	return parse(p[:n], prefixReader(p, r))
 }
 
+// ParseAt parses metadata from r, and returns the metadata found
+// and the first error encountered.
+//
+// Metadata is parsed on a best effort basis.
+// Valid values are always returned
+// even when if non-fatal errors had been encountered by decoding
+// the underlying formats.
 func ParseAt(r io.ReaderAt) (*Metadata, error) {
 	return Parse(&atReadSeeker{0, r})
 }

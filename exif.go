@@ -10,10 +10,13 @@ import (
 
 func FromExifBytes(p []byte) (*Metadata, error) {
 	x, err := exif.DecodeBytes(p)
-	if err != nil {
-		return nil, err
+	if x != nil {
+		m := FromExif(x)
+		if m != nil && len(m.Attr) != 0 {
+			return m, err
+		}
 	}
-	return FromExif(x), nil
+	return nil, err
 }
 
 func FromExif(x *exif.Exif) *Metadata {

@@ -2,7 +2,6 @@ package metadata
 
 import (
 	"io"
-	"log"
 
 	xjpeg "github.com/tajtiattila/metadata/jpeg"
 )
@@ -56,23 +55,23 @@ func parseJpeg(r io.Reader) (*Metadata, error) {
 
 	if ex != nil {
 		m, err := FromExifBytes(ex)
-		if err != nil {
-			log.Println("FromExifBytes error:", err)
-			firstErr = err
-		} else {
+		if m != nil {
 			meta = append(meta, m)
+		}
+		if err != nil {
+			firstErr = err
 		}
 	}
 
 	if xmp != nil {
 		m, err := FromXMPBytes(xmp)
+		if m != nil {
+			meta = append(meta, m)
+		}
 		if err != nil {
-			log.Println("FromXmpBytes error:", err)
 			if firstErr == nil {
 				firstErr = err
 			}
-		} else {
-			meta = append(meta, m)
 		}
 	}
 
