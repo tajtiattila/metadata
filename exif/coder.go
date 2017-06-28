@@ -228,7 +228,7 @@ Outer:
 	// calculate initial offset for sub-IFDs
 	suboffset := 8 // endianness, magic, 1st IFD pointer
 	for _, d := range dirs {
-		suboffset += d.encodedLen(false)
+		suboffset += d.encodedLen()
 	}
 
 	// set sub-IFD offsets within IFD0
@@ -236,7 +236,7 @@ Outer:
 		if sub.idx != -1 {
 			t := ifd0[sub.idx]
 			bo.PutUint32(t.Value, uint32(suboffset))
-			suboffset += sub.dir.encodedLen(true)
+			suboffset += sub.dir.encodedLen()
 		}
 	}
 
@@ -270,14 +270,18 @@ Outer:
 	// It doesn't seem necessary, but that is how the order is presented in the Exif 2.2 spec
 
 	// write IFDs
+	var next int
 	for i, d := range dirs {
-		offset = d.encode(bo, p, offset, false, i+1 != len(dirs))
+		if i != 0 {
+			bo.PutUint32(p[next:], uint32(offset))
+		}
+		offset, next = d.encode(bo, p, offset)
 	}
 
 	// write sub-IFDs
 	for _, sub := range subifd {
 		if sub.idx != -1 {
-			offset = sub.dir.encode(bo, p, offset, true, false)
+			offset, _ = sub.dir.encode(bo, p, offset)
 		}
 	}
 
@@ -372,14 +376,9 @@ func (h *errh) decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int) {
 // It is a directory of raw tagged fields, also named entries.
 type Dir []Entry
 
-func (d Dir) encodedLen(subIfd bool) int {
-	// tags
-	n := 2 + len(d)*12
-
-	if !subIfd {
-		// next IFD pointer
-		n += 4
-	}
+func (d Dir) encodedLen() int {
+	// number of tags, tags, next IFD pointer
+	n := 2 + len(d)*12 + 4
 
 	for _, t := range d {
 		if len(t.Value) > 4 {
@@ -391,12 +390,16 @@ func (d Dir) encodedLen(subIfd bool) int {
 	return n
 }
 
-func (d Dir) encode(bo binary.ByteOrder, p []byte, offset int, subIfd, hasNext bool) int {
-	// offset for data outside tag header
-	dataoffset := offset + 2 + len(d)*12
-	if !subIfd {
-		dataoffset += 4
-	}
+// encode encodes d using bo into p[offset:].
+// Further data should be written to p[nextoffset:].
+// The offset of the next IFD pointer should be written to p[link:].
+func (d Dir) encode(bo binary.ByteOrder, p []byte, offset int) (nextoffset, link int) {
+	// offset for value data that doesn't fit in tag headers
+	valueoffset := offset + 2 + len(d)*12
+
+	// room for next IFD pointer
+	link = valueoffset
+	valueoffset += 4
 
 	bo.PutUint16(p[offset:], uint16(len(d)))
 	offset += 2
@@ -408,21 +411,14 @@ func (d Dir) encode(bo binary.ByteOrder, p []byte, offset int, subIfd, hasNext b
 		if len(t.Value) <= 4 {
 			copy(p[offset+8:], t.Value)
 		} else {
-			bo.PutUint32(p[offset+8:], uint32(dataoffset))
-			copy(p[dataoffset:], t.Value)
-			dataoffset += len(t.Value)
+			bo.PutUint32(p[offset+8:], uint32(valueoffset))
+			copy(p[valueoffset:], t.Value)
+			valueoffset += len(t.Value)
 		}
 		offset += 12
 	}
 
-	if !subIfd {
-		// write next IFD pointer (or leave as zero)
-		if hasNext {
-			bo.PutUint32(p[offset:], uint32(dataoffset))
-		}
-	}
-
-	return dataoffset
+	return valueoffset, link
 }
 
 // Sort sorts entries according to tag values, as needed by Tag() and Index().
