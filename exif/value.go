@@ -84,8 +84,8 @@ func (v Ascii) marshalTiff(bo binary.ByteOrder) (typ uint16, count uint32, p []b
 // GPSLatitude, GPSLongitude and GPSTimeStamp values.
 //
 // The high value will be always zero if r represents
-// hours/degrees less or equal to 1e6,
-// or res itself is less or equal to 1e6.
+// hours/degrees less than or equal to 1e6,
+// or res itself is less than or equal to 1e6.
 func (r Rational) Sexagesimal(res uint32) (hi, lo uint64, ok bool) {
 	if len(r) != 6 || res == 0 {
 		return

@@ -392,7 +392,7 @@ func (d Dir) encodedLen() int {
 
 // encode encodes d using bo into p[offset:].
 // Further data should be written to p[nextoffset:].
-// The offset of the next IFD pointer should be written to p[link:].
+// If there are furtner IFDs linked to d, its offset should be written to p[link:].
 func (d Dir) encode(bo binary.ByteOrder, p []byte, offset int) (nextoffset, link int) {
 	// offset for value data that doesn't fit in tag headers
 	valueoffset := offset + 2 + len(d)*12
