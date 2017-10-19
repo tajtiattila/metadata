@@ -66,6 +66,20 @@ func TestRational(t *testing.T) {
 
 	// 156.123456°
 	testSexagesimalV(t, Rational{156123456, 1e6, 0, 1, 0, 1}, 1e6, uint64(156123456*3600))
+
+	// creation of Sexagesimals
+	testMakeSexagesimal(t, uint64(23*time.Hour+48*time.Minute+56*time.Second), uint32(time.Second),
+		Rational{23, 1, 48, 1, 56, 1})
+
+	// 23° 15' 0.01"
+	testMakeSexagesimal(t, uint64((23*3600+15*60)*1e6+1e4), 1e6,
+		Rational{23, 1, 15, 1, 1, 100})
+
+	// resolution overflow with rounding (500/1e9 → 1/1e6)
+	testMakeSexagesimal(t, uint64((23*3600+15*60)*1e9+500), 1e9, Rational{23, 1, 15, 1, 1, 1e6})
+
+	// resolution overflow with rounding (499/1e9 → 0)
+	testMakeSexagesimal(t, uint64((23*3600+15*60)*1e9+499), 1e9, Rational{23, 1, 15, 1, 0, 1})
 }
 
 func testSexagesimal(t *testing.T, r Rational, res uint32) {
@@ -79,7 +93,7 @@ func testSexagesimalV(t *testing.T, r Rational, res uint32, val uint64) {
 func testSexagesimalImpl(t *testing.T, r Rational, res uint32, val uint64, tval bool) {
 	hi, lo, ok := r.Sexagesimal(res)
 	if !ok {
-		t.Error("Rational %v invalid", r)
+		t.Error("Rational.Sexagesimal %v invalid", r)
 		return
 	}
 
@@ -88,13 +102,30 @@ func testSexagesimalImpl(t *testing.T, r Rational, res uint32, val uint64, tval 
 	want := bigSexagesimal(r, res)
 
 	if got.Cmp(want) != 0 {
-		t.Errorf("Rational %v yields %v want %v", r, got, want)
+		t.Errorf("Rational.Sexagesimal %v yields %v want %v", r, got, want)
 	}
 
 	if tval {
 		if hi != 0 || lo != val {
-			t.Errorf("Rational %v yields %v want %v", r, got, val)
+			t.Errorf("Rational.Sexagesimal %v yields %v want %v", r, got, val)
 		}
+	}
+}
+
+func testMakeSexagesimal(t *testing.T, val uint64, res uint32, r Rational) {
+	// test if Sexagesimal produces the correct result
+	xr := Sexagesimal(val, res)
+	ok := true
+	for i := 0; i < 3; i++ {
+		gn, gd := xr[2*i], xr[2*i+1]
+		wn, wd := r[2*i], r[2*i+1]
+		// a/b == c/d iff a*d == c*b
+		v1 := uint64(gn) * uint64(wd)
+		v2 := uint64(wn) * uint64(gd)
+		ok = ok && v1 == v2
+	}
+	if !ok {
+		t.Errorf("Sexagesimal(%v, %v) yields %v want %v", val, res, xr, r)
 	}
 }
 

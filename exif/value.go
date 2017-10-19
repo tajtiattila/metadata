@@ -217,28 +217,37 @@ func sub128(ahi, alo, bhi, blo uint64) (hi, lo uint64) {
 }
 
 // Sexagesimal creates a sexagesimal triplet Rational
+// with three components (hours/degrees, minutes and seconds)
 // from v and res, where x = v/res means x seconds.
-// The three components of the returned Rational
-// mean hours (or degrees), minutes and seconds.
+//
+// If res is zero, Sexagesimal panics.
+// Res is used as the denominator of seconds.
+// If res > 1e6, the denominator of seconds will be 1e6.
 func Sexagesimal(v uint64, res uint32) Rational {
-	w := uint64(res) * 60 * 60
-	r := make(Rational, 6) // 3 num/denom pairs
-
-	for i := 0; i < 3; i++ {
-		num := uint32(v / w)
-		var denom uint32
-		if i < 2 {
-			denom = 1
-		} else {
-			denom = res
-		}
-
-		r[2*i] = num
-		r[2*i+1] = denom
-
-		v /= w
-		w /= 60
+	if res == 0 {
+		panic("res musn't be 0")
 	}
+	secm := uint64(res) * 60
+	hm := v / secm
+
+	const maxRes = 1e6
+	secpart := v % secm
+	if res > maxRes {
+		v := secpart * 2 * maxRes / uint64(res)
+		secpart = v / 2
+		if v&1 != 0 {
+			secpart++
+		}
+		res = maxRes
+	}
+
+	r := make(Rational, 6) // 3 num/denom pairs
+	r[0] = uint32(hm / 60)
+	r[1] = 1
+	r[2] = uint32(hm % 60)
+	r[3] = 1
+	r[4] = uint32(secpart)
+	r[5] = res
 
 	return r
 }
