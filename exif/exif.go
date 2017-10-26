@@ -22,14 +22,14 @@ type Exif struct {
 	binary.ByteOrder
 
 	// Main image TIFF metadata
-	IFD0 Dir
+	IFD0 []Entry
 
 	// Main image sub-IFDs
-	Exif, GPS, Interop Dir
+	Exif, GPS, Interop []Entry
 
 	// thumbnail
-	IFD1  Dir    // Metadata
-	Thumb []byte // Raw image data, typically JPEG
+	IFD1  []Entry // Metadata
+	Thumb []byte  // Raw image data, typically JPEG
 }
 
 // FormatError holds warnings encountered by Decode or DecodeBytes if

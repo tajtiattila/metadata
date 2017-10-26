@@ -16,15 +16,15 @@ func New(dx, dy int) *Exif {
 
 	ent := entryFunc(x.ByteOrder)
 
-	x.IFD0 = Dir{
+	x.IFD0 = []Entry{
 		// resolution
 		ent(exiftag.XResolution, Rational{72, 1}),
 		ent(exiftag.YResolution, Rational{72, 1}),
 		ent(exiftag.ResolutionUnit, Long{ifd1ResUnitInch}),
 	}
-	x.IFD0.Sort()
+	sortDir(x.IFD0)
 
-	x.Exif = Dir{
+	x.Exif = []Entry{
 		ent(exiftag.ExifVersion, Undef("0220")),
 		ent(exiftag.FlashpixVersion, Undef("0100")),
 

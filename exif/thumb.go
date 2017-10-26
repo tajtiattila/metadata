@@ -57,7 +57,7 @@ func (x *Exif) setThumbData(compr uint16, p []byte) error {
 
 	ent := entryFunc(x.ByteOrder)
 
-	x.IFD1 = Dir{
+	x.IFD1 = []Entry{
 		ent(exiftag.Compression, Short{compr}),
 		ent(exiftag.XResolution, Rational{72, 1}),
 		ent(exiftag.YResolution, Rational{72, 1}),
@@ -67,7 +67,7 @@ func (x *Exif) setThumbData(compr uint16, p []byte) error {
 		ent(ifd1thumbOffset, Long{0}),
 		ent(ifd1thumbLength, Long{0}),
 	}
-	x.IFD1.Sort()
+	sortDir(x.IFD1)
 
 	return nil
 }

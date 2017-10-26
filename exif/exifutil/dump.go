@@ -27,7 +27,7 @@ func Sdump(x *exif.Exif) string {
 	return buf.String()
 }
 
-func showTags(w io.Writer, pfx string, dir uint32, d exif.Dir) {
+func showTags(w io.Writer, pfx string, dir uint32, d []exif.Entry) {
 	if len(d) == 0 {
 		return
 	}

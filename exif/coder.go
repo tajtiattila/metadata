@@ -57,7 +57,7 @@ func DecodeBytes(p []byte) (*Exif, error) {
 
 	var h errh
 
-	var d []Dir
+	var d [][]Entry
 	for {
 		if len(p) < offset+4 {
 			// offset points outside Exif
@@ -81,13 +81,13 @@ func DecodeBytes(p []byte) (*Exif, error) {
 			break
 		}
 
-		var dir Dir
+		var dir []Entry
 		dir, offset = h.decodeDir(bo, p, ptr)
 		d = append(d, dir)
 	}
 
 	// populate sub-IFDs
-	var ifd0, ifd1 Dir
+	var ifd0, ifd1 []Entry
 	if len(d) > 0 {
 		ifd0 = d[0]
 		if len(d) > 1 {
@@ -96,7 +96,7 @@ func DecodeBytes(p []byte) (*Exif, error) {
 	}
 	x := &Exif{ByteOrder: bo, IFD0: ifd0, IFD1: ifd1}
 	for _, t := range ifd0 {
-		var psub *Dir
+		var psub *[]Entry
 		switch t.Tag {
 		case ifd0exifSub:
 			psub = &x.Exif
@@ -150,7 +150,7 @@ func (x *Exif) encodeBytes(prefix []byte) ([]byte, error) {
 	subifd := []struct {
 		idx int // within IFD0
 		tag uint16
-		dir Dir
+		dir []Entry
 	}{
 		{-1, ifd0exifSub, x.Exif},
 		{-1, ifd0gpsSub, x.GPS},
@@ -158,7 +158,7 @@ func (x *Exif) encodeBytes(prefix []byte) ([]byte, error) {
 	}
 
 	// filter/set IFD0 to have the needed subifds
-	var ifd0 Dir
+	var ifd0 []Entry
 
 Outer:
 	for i, t := range x.IFD0 {
@@ -208,7 +208,7 @@ Outer:
 	}
 
 	// calc final dirs
-	dirs := []Dir{ifd0}
+	dirs := [][]Entry{ifd0}
 	if len(ifd1) != 0 {
 		dirs = append(dirs, ifd1)
 	}
@@ -228,7 +228,7 @@ Outer:
 	// calculate initial offset for sub-IFDs
 	suboffset := 8 // endianness, magic, 1st IFD pointer
 	for _, d := range dirs {
-		suboffset += d.encodedLen()
+		suboffset += encodedLen(d)
 	}
 
 	// set sub-IFD offsets within IFD0
@@ -236,7 +236,7 @@ Outer:
 		if sub.idx != -1 {
 			t := ifd0[sub.idx]
 			bo.PutUint32(t.Value, uint32(suboffset))
-			suboffset += sub.dir.encodedLen()
+			suboffset += encodedLen(sub.dir)
 		}
 	}
 
@@ -275,13 +275,13 @@ Outer:
 		if i != 0 {
 			bo.PutUint32(p[next:], uint32(offset))
 		}
-		offset, next = d.encode(bo, p, offset)
+		offset, next = encodeDir(d, bo, p, offset)
 	}
 
 	// write sub-IFDs
 	for _, sub := range subifd {
 		if sub.idx != -1 {
-			offset, _ = sub.dir.encode(bo, p, offset)
+			offset, _ = encodeDir(sub.dir, bo, p, offset)
 		}
 	}
 
@@ -310,7 +310,7 @@ func (h *errh) Error() error {
 	return FormatError(h.msg)
 }
 
-func (h *errh) decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int) {
+func (h *errh) decodeDir(bo binary.ByteOrder, p []byte, offset int) ([]Entry, int) {
 	ntags := int(bo.Uint16(p[offset:]))
 	offset += 2
 
@@ -366,17 +366,12 @@ func (h *errh) decodeDir(bo binary.ByteOrder, p []byte, offset int) (Dir, int) {
 
 	// Tags should appear sorted according to TIFF spec,
 	// and it will help in searching as well.
-	d := Dir(tags)
-	d.Sort()
+	sortDir(tags)
 
-	return d, end
+	return tags, end
 }
 
-// Dir represents an Image File Directory (IFD) within Exif.
-// It is a directory of raw tagged fields, also named entries.
-type Dir []Entry
-
-func (d Dir) encodedLen() int {
+func encodedLen(d []Entry) int {
 	// number of tags, tags, next IFD pointer
 	n := 2 + len(d)*12 + 4
 
@@ -390,10 +385,10 @@ func (d Dir) encodedLen() int {
 	return n
 }
 
-// encode encodes d using bo into p[offset:].
+// encodeDir encodes d using bo into p[offset:].
 // Further data should be written to p[nextoffset:].
 // If there are furtner IFDs linked to d, its offset should be written to p[link:].
-func (d Dir) encode(bo binary.ByteOrder, p []byte, offset int) (nextoffset, link int) {
+func encodeDir(d []Entry, bo binary.ByteOrder, p []byte, offset int) (nextoffset, link int) {
 	// offset for value data that doesn't fit in tag headers
 	valueoffset := offset + 2 + len(d)*12
 
@@ -425,21 +420,21 @@ func (d Dir) encode(bo binary.ByteOrder, p []byte, offset int) (nextoffset, link
 //
 // Tags should appear sorted according to TIFF spec, therefore
 // functions of this package always keep Dirs sorted.
-func (d Dir) Sort() {
+func sortDir(d []Entry) {
 	sort.Sort(dirSort(d))
 }
 
-// Tag returns a pointer to the Entry with tag t, or nil if t does not exist.
-func (d Dir) Tag(t uint16) *Entry {
-	i := d.Index(t)
+// dirTag returns a pointer to the Entry with tag t, or nil if t does not exist.
+func dirTag(d []Entry, t uint16) *Entry {
+	i := dirTagIndex(d, t)
 	if i != -1 {
 		return &d[i]
 	}
 	return nil
 }
 
-// Index returns the index of tag t, or -1 if t does not exist in d.
-func (d Dir) Index(t uint16) int {
+// dirTagIndex returns the index of tag t, or -1 if t does not exist in d.
+func dirTagIndex(d []Entry, t uint16) int {
 	i := sort.Search(len(d), func(i int) bool {
 		return t <= d[i].Tag
 	})
@@ -449,10 +444,10 @@ func (d Dir) Index(t uint16) int {
 	return i
 }
 
-// EnsureTag returns a pointer to the Entry with tag t.
+// ensureTag returns a pointer to the Entry with tag t.
 //
 // An empty Entry with no Type or Count is created if t does not exist in d.
-func (d *Dir) EnsureTag(t uint16) *Entry {
+func ensureTag(d *[]Entry, t uint16) *Entry {
 	i := sort.Search(len(*d), func(i int) bool {
 		return t <= (*d)[i].Tag
 	})
@@ -467,9 +462,9 @@ func (d *Dir) EnsureTag(t uint16) *Entry {
 	return &(*d)[i]
 }
 
-// Remove removes t from d.
-func (d *Dir) Remove(t uint16) {
-	i := d.Index(t)
+// removeTag removes t from d.
+func removeTag(d *[]Entry, t uint16) {
+	i := dirTagIndex(*d, t)
 	if i == -1 {
 		return
 	}
@@ -484,21 +479,21 @@ func (s dirSort) Len() int           { return len(s) }
 func (s dirSort) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s dirSort) Less(i, j int) bool { return s[i].Tag < s[j].Tag }
 
-func getOffset(bo binary.ByteOrder, d Dir, ofst uint16) (offset int, ok bool) {
-	return fieldOfs(bo, d.Tag(ofst))
+func getOffset(bo binary.ByteOrder, d []Entry, ofst uint16) (offset int, ok bool) {
+	return fieldOfs(bo, dirTag(d, ofst))
 }
 
-func getOffsetLen(bo binary.ByteOrder, d Dir, ofst, lent uint16) (offset, length int, ok bool) {
-	offset, ok = fieldOfs(bo, d.Tag(ofst))
+func getOffsetLen(bo binary.ByteOrder, d []Entry, ofst, lent uint16) (offset, length int, ok bool) {
+	offset, ok = fieldOfs(bo, dirTag(d, ofst))
 	if !ok {
 		return
 	}
-	length, ok = fieldOfs(bo, d.Tag(lent))
+	length, ok = fieldOfs(bo, dirTag(d, lent))
 	return
 }
 
-func putOffsetLen(bo binary.ByteOrder, d Dir, ofst, lent uint16, offset, length int) (ok bool) {
-	ok = putFieldOfs(bo, d.Tag(ofst), offset)
-	ok = ok && putFieldOfs(bo, d.Tag(lent), length)
+func putOffsetLen(bo binary.ByteOrder, d []Entry, ofst, lent uint16, offset, length int) (ok bool) {
+	ok = putFieldOfs(bo, dirTag(d, ofst), offset)
+	ok = ok && putFieldOfs(bo, dirTag(d, lent), length)
 	return ok
 }

@@ -96,7 +96,7 @@ func testExifEqual(t *testing.T, a, b *Exif) {
 	}
 }
 
-func testDirEqual(t *testing.T, name string, a, b Dir) {
+func testDirEqual(t *testing.T, name string, a, b []Entry) {
 	if len(a) != len(b) {
 		t.Errorf("%s length differ: %d != %d\n", name, len(a), len(b))
 		return
@@ -137,7 +137,7 @@ func sdump(x *Exif) string {
 	return buf.String()
 }
 
-func showTags(w io.Writer, pfx string, dir uint32, d Dir) {
+func showTags(w io.Writer, pfx string, dir uint32, d []Entry) {
 	if len(d) == 0 {
 		return
 	}

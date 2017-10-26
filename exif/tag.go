@@ -21,7 +21,7 @@ var (
 // of exiftag.{Tiff, Exif, GPS, Interop} otherwise
 // Tag panics.
 func (x *Exif) Tag(t uint32) *Tag {
-	e := x.dirp(t).Tag(uint16(t))
+	e := dirTag(*x.dirp(t), uint16(t))
 	if e == nil {
 		return &Tag{}
 	}
@@ -39,13 +39,13 @@ func (x *Exif) Tag(t uint32) *Tag {
 func (x *Exif) Set(t uint32, v Value) {
 	d := x.dirp(t)
 	if v == nil {
-		d.Remove(uint16(t))
+		removeTag(d, uint16(t))
 	} else {
-		d.EnsureTag(uint16(t)).SetValue(x.ByteOrder, v)
+		ensureTag(d, uint16(t)).SetValue(x.ByteOrder, v)
 	}
 }
 
-func (x *Exif) dirp(name uint32) *Dir {
+func (x *Exif) dirp(name uint32) *[]Entry {
 	switch name & exiftag.DirMask {
 	case exiftag.Tiff:
 		return &x.IFD0
