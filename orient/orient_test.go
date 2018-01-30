@@ -43,6 +43,12 @@ func TestOrient(t *testing.T) {
 			if err := sameImage(got, want); err != nil {
 				t.Errorf("%s orientation %d: %v", f.name, o, err)
 			}
+
+			wantt := src.Bounds().Dx() == want.Bounds().Dy()
+			gott := IsTranspose(o)
+			if wantt != gott {
+				t.Errorf("IsTranspose(%d) reports %v, want %v", gott, wantt)
+			}
 		}
 	}
 }

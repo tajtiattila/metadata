@@ -50,6 +50,19 @@ func Orient(im image.Image, o int) image.Image {
 	return dst
 }
 
+// IsTranspose reports if the Exif orientation o
+// retures a transpose operation that swaps
+// the x and y dimensions of the image.
+//
+// In other words, it returns true iff o represents
+// a rotation by ±90°, a transpose or a transverse operation.
+func IsTranspose(o int) bool {
+	if o < 2 || o > 8 {
+		return false
+	}
+	return o >= 5
+}
+
 func asRGBA(src image.Image) *image.RGBA {
 	db := src.Bounds().Canon()
 	db = db.Sub(db.Min)
