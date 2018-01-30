@@ -8,7 +8,63 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"strconv"
+	"time"
 )
+
+// Metadata records file metadata.
+type Metadata struct {
+	// Date of original image (eg. scanned photo)
+	DateTimeOriginal Time
+
+	// Original file creation date (eg. time of scan)
+	DateTimeCreated Time
+
+	// GPS records GPS information.
+	GPS struct {
+		GPSInfo
+
+		// Valid indicates if Latitude and Longitude
+		// fields of GPSInfo are valid.
+		Valid bool
+	}
+
+	// Orientation is the Exif orientation.
+	// Possible values are based on the exif spec:
+	//   0: undefined
+	//   1: no rotation
+	//   2: flip horizontal
+	//   3: rotate 180°
+	//   4: flip vertical
+	//   5: transpose
+	//   6: rotate 90°
+	//   7: transverse
+	//   8: rotate 270°
+	Orientation int
+
+	// Rating is the XMP rating. Possible values are:
+	//  -1: rejected
+	//   0: unrated or missing
+	//   1..5: user rating
+	Rating int
+
+	// Recording equipment manufacturer and model name/number name
+	Make, Model string
+
+	// Attr holds metadata attributes as strings.
+	Attr map[string]string
+}
+
+// GPSInfo records GPS information.
+type GPSInfo struct {
+	// Latitude and Longitude are the geographical location.
+	// Positive latitude means north, positive longitude means east.
+	Latitude  float64
+	Longitude float64
+
+	// Time is time of the GPS fix. Zero means undefined.
+	Time time.Time
+}
 
 // Attribute names read from media files.
 //
@@ -40,17 +96,16 @@ const (
 	Model = "Model"
 )
 
-type Metadata struct {
-	// Attr lists metadata attributes
-	Attr map[string]string
-}
-
 // Set sets a metadata attribute.
 func (m *Metadata) Set(key, value string) {
 	if m.Attr == nil {
 		m.Attr = make(map[string]string)
 	}
 	m.Attr[key] = value
+
+	if f, ok := updateValue[key]; ok {
+		f(m, value)
+	}
 }
 
 // Get returns a metadata attribute.
@@ -191,4 +246,41 @@ func setOf(v ...string) map[string]struct{} {
 		m[s] = struct{}{}
 	}
 	return m
+}
+
+type updateFunc func(m *Metadata, value string)
+
+var updateValue = map[string]updateFunc{
+	DateTimeOriginal: func(m *Metadata, v string) { updateTime(&m.DateTimeOriginal, v) },
+	DateTimeCreated:  func(m *Metadata, v string) { updateTime(&m.DateTimeCreated, v) },
+	GPSDateTime:      func(m *Metadata, v string) { updateTimeTime(&m.GPS.Time, v) },
+	GPSLatitude:      updateLatLong,
+	GPSLongitude:     updateLatLong,
+	Orientation:      func(m *Metadata, v string) { updateInt(&m.Orientation, v) },
+	Rating:           func(m *Metadata, v string) { updateInt(&m.Rating, v) },
+	Make:             func(m *Metadata, v string) { m.Make = v },
+	Model:            func(m *Metadata, v string) { m.Model = v },
+}
+
+func updateTime(p *Time, v string) {
+	*p = ParseTime(v)
+}
+
+func updateTimeTime(p *time.Time, v string) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		*p = t
+	}
+}
+
+func updateInt(p *int, v string) {
+	if i, err := strconv.Atoi(v); err == nil {
+		*p = i
+	}
+}
+
+func updateLatLong(m *Metadata, v string) {
+	var laterr, lonerr error
+	m.GPS.Latitude, laterr = strconv.ParseFloat(m.Get(GPSLatitude), 64)
+	m.GPS.Longitude, lonerr = strconv.ParseFloat(m.Get(GPSLongitude), 64)
+	m.GPS.Valid = laterr == nil && lonerr == nil
 }
