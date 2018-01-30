@@ -37,7 +37,7 @@ func FromExif(x *exif.Exif) *Metadata {
 		m.Set(DateTimeCreated, fmtTime(t, islocal))
 	}
 
-	if o := x.Tag(exiftag.Orientation).Short(); len(o) > 1 {
+	if o := x.Tag(exiftag.Orientation).Short(); len(o) > 0 {
 		m.Set(Orientation, fmt.Sprintf("%d", o[0]))
 	}
 
