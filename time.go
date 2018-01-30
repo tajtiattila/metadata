@@ -3,7 +3,7 @@ package metadata
 import "time"
 
 // Time is like time.Time but records the precision
-// (year, month, day, hout, minute, second or subsecond)
+// (year, month, day, hour, minute, second or subsecond)
 // of the parsed string and whether a time zone was
 // specified.
 //
@@ -15,8 +15,8 @@ import "time"
 // Certain tools can write time zone information to Exif date fields,
 // but such Exif files are technically invalid.
 //
-// XMP uses the time format understood by ParseTime, but omitting
-// elements from the end of the string is optional.
+// XMP uses the time format understood by ParseTime, but may
+// omit elements from the end of the string, reducing precision.
 type Time struct {
 	// Actual time value.
 	// Its location is always time.Local if HasLoc is false.
