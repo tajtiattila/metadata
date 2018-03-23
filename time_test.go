@@ -103,3 +103,28 @@ func testTimeIn(t *testing.T, y int, month time.Month, d, h, min, s int, l0, l1 
 		t.Errorf("testTimeIn time differ got %v != src %v", got.Time, src.Time)
 	}
 }
+
+func TestTimeLoc(t *testing.T) {
+	// CET
+	testTimeLoc(t, "2018-03-16T18:32:55", "Europe/Berlin", "2018-03-16T18:32:55+01:00")
+	testTimeLoc(t, "2018-03-16T18:32:55Z", "Europe/Berlin", "2018-03-16T19:32:55+01:00")
+	// CEST
+	testTimeLoc(t, "2018-07-16T18:32:55", "Europe/Berlin", "2018-07-16T18:32:55+02:00")
+	testTimeLoc(t, "2018-07-16T18:32:55Z", "Europe/Berlin", "2018-07-16T20:32:55+02:00")
+}
+
+func testTimeLoc(t *testing.T, src, locname, want string) {
+	p := ParseTime(src)
+
+	loc, err := time.LoadLocation(locname)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	q := p.In(loc)
+
+	got := q.String()
+	if got != want {
+		t.Errorf("%s in %s is %s, want %s", src, locname, got, want)
+	}
+}
