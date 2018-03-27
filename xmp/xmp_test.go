@@ -1,6 +1,8 @@
 package xmp
 
 import (
+	"bytes"
+	"encoding/xml"
 	"strings"
 	"testing"
 )
@@ -8,7 +10,7 @@ import (
 func TestDecode(t *testing.T) {
 	x, err := Decode(strings.NewReader(sample))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("can't decode sample:", err)
 	}
 
 	lat, ok := x.Float64(GPSLatitude)
@@ -108,3 +110,19 @@ const sample = `<?xpacket begin='` + "\ufeff" + `' id='W5M0MpCehiHzreSzNTczkc9d'
 </rdf:RDF>
 </x:xmpmeta>
 <?xpacket end='w'?>`
+
+func TestXMPEncode(t *testing.T) {
+	x, err := Decode(strings.NewReader(sample))
+	if err != nil {
+		t.Fatal("can't decode sample:", err)
+	}
+
+	buf := new(bytes.Buffer)
+	enc := xml.NewEncoder(buf)
+	enc.Indent("", "  ")
+	if err := enc.Encode(x); err != nil {
+		t.Fatal("can't encode:", err)
+	}
+
+	t.Log(buf.String())
+}
