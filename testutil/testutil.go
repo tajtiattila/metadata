@@ -31,12 +31,12 @@ func MediaFileInfos(t *testing.T) []FileInfo {
 	pth := filepath.Join(root, "exiftool.json")
 	f, err := os.Open(pth)
 	if err != nil {
-		t.Skip("%s not found", pth)
+		t.Skipf("%s not found", pth)
 	}
 	defer f.Close()
 
 	if err := json.NewDecoder(f).Decode(&fi); err != nil {
-		t.Skip("%s decode error %v", pth, err)
+		t.Skipf("%s decode error %v", pth, err)
 	}
 
 	for _, e := range fi {

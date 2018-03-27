@@ -102,12 +102,12 @@ func testScannerSegments(t *testing.T, p []byte) {
 		if s.StartChunk() {
 			if len(seg) < 4 ||
 				seg[0] != 0xff || seg[1] == 0 || seg[1] == 0xff {
-				t.Error("error: testScannerSegments invalid segment %x:", seg)
+				t.Errorf("error: testScannerSegments invalid segment %x:", seg)
 				return
 			}
 			l := int(seg[2])<<8 + int(seg[3])
 			if l+2 != len(seg) {
-				t.Error("error: testScannerSegments segment len: want %v got %v", l+2, len(seg))
+				t.Errorf("error: testScannerSegments segment len: want %v got %v", l+2, len(seg))
 			}
 		}
 		t.Logf("%-5v %4d %.32x", s.StartChunk(), len(seg), seg)
