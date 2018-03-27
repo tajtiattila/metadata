@@ -18,7 +18,7 @@ func parseMP4(r io.Reader) (*Metadata, error) {
 	var meta []*Metadata
 
 	mvhd := new(Metadata)
-	mvhd.Set(DateTimeCreated, fmtTime(f.Header.DateCreated, false))
+	mvhd.Set(DateTimeCreated, f.Header.DateCreated)
 	meta = append(meta, mvhd)
 
 	for _, b := range f.Child {

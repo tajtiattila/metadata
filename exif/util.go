@@ -45,31 +45,49 @@ func New(dx, dy int) *Exif {
 }
 
 // Time reports the time from the specified DateTime and SubSecTime tags.
-func (x *Exif) Time(timeTag, subSecTag uint32) (t time.Time, islocal, ok bool) {
+//
+// Exif stores only local time, therefore the returned
+// time usually has t.Location() == time.Local,
+// which means the actual time zone is unknown.
+func (x *Exif) Time(timeTag, subSecTag uint32) (t time.Time, ok bool) {
 	return timeFromTags(x.Tag(timeTag), x.Tag(subSecTag))
+}
+
+func (x *Exif) SetTime(timeTag, subSecTag uint32, t time.Time) {
+	v, subv := timeValues(t)
+
+	x.Set(timeTag, v)
+	x.Set(subSecTag, subv)
 }
 
 // DateTime reports the Exif datetime. The fields checked
 // in order are Exif/DateTimeOriginal, Exif/DateTimeDigitized and
 // Tiff/DateTime. If neither is available, ok == false is returned.
+//
+// Exif stores only local time, therefore the returned
+// time usually has t.Location() == time.Local,
+// which means the actual time zone is unknown.
 func (x *Exif) DateTime() (t time.Time, ok bool) {
-	t, _, ok = x.Time(exiftag.DateTimeOriginal, exiftag.SubSecTimeOriginal)
+	t, ok = x.Time(exiftag.DateTimeOriginal, exiftag.SubSecTimeOriginal)
 	if ok {
 		return
 	}
 
-	t, _, ok = x.Time(exiftag.DateTimeDigitized, exiftag.SubSecTimeDigitized)
+	t, ok = x.Time(exiftag.DateTimeDigitized, exiftag.SubSecTimeDigitized)
 	if ok {
 		return
 	}
 
-	t, _, ok = x.Time(exiftag.DateTime, exiftag.SubSecTime)
+	t, ok = x.Time(exiftag.DateTime, exiftag.SubSecTime)
 	return
 }
 
 // SetDateTime sets the fields
 // Exif/DateTimeOriginal, Exif/DateTimeDigitized and
 // Tiff/DateTime to t.
+//
+// Exif stores only local time, therefore
+// the time zone information in t is not stored.
 func (x *Exif) SetDateTime(t time.Time) {
 	v, subv := timeValues(t)
 
@@ -271,15 +289,15 @@ func (x *Exif) setGPSDateTime(t time.Time) {
 
 const TimeFormat = "2006:01:02 15:04:05"
 
-func timeFromTags(t, subt *Tag) (tm time.Time, islocal, ok bool) {
-	tm, islocal, ok = timePart(t)
+func timeFromTags(t, subt *Tag) (tm time.Time, ok bool) {
+	tm, ok = timePart(t)
 	if !ok {
 		return
 	}
 
 	subs, ok := subt.Ascii()
 	if !ok {
-		return tm, islocal, true
+		return tm, true
 	}
 
 	var nanos time.Duration
@@ -295,10 +313,10 @@ func timeFromTags(t, subt *Tag) (tm time.Time, islocal, ok bool) {
 			break
 		}
 	}
-	return tm.Add(nanos * res), islocal, true
+	return tm.Add(nanos * res), true
 }
 
-func timePart(t *Tag) (tm time.Time, islocal, ok bool) {
+func timePart(t *Tag) (tm time.Time, ok bool) {
 	tms, ok := t.Ascii()
 	if !ok {
 		return
@@ -320,14 +338,14 @@ func timePart(t *Tag) (tm time.Time, islocal, ok bool) {
 		if e.islocal {
 			tm, err = time.ParseInLocation(e.layout, tms, time.Local)
 		} else {
-			tm, err = time.Parse(e.layout, tms)
+			tm, err = time.ParseInLocation(e.layout, tms, time.UTC)
 		}
 		if err == nil {
-			return tm, e.islocal, true
+			return tm, true
 		}
 	}
 
-	return time.Time{}, false, false
+	return time.Time{}, false
 }
 
 func timeValues(t time.Time) (v, subv Value) {

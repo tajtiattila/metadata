@@ -8,17 +8,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"strconv"
 	"time"
 )
 
 // Metadata records file metadata.
 type Metadata struct {
 	// Date of original image (eg. scanned photo)
-	DateTimeOriginal Time
+	DateTimeOriginal time.Time
 
 	// Original file creation date (eg. time of scan)
-	DateTimeCreated Time
+	DateTimeCreated time.Time
 
 	// GPS records GPS information.
 	GPS struct {
@@ -51,8 +50,12 @@ type Metadata struct {
 	// Recording equipment manufacturer and model name/number name
 	Make, Model string
 
-	// Attr holds metadata attributes as strings.
-	Attr map[string]string
+	// Attr holds metadata attributes. Values are one of these types:
+	//   time.Time
+	//   string
+	//   int
+	//   float64
+	Attr map[string]interface{}
 }
 
 // GPSInfo records GPS information.
@@ -97,9 +100,9 @@ const (
 )
 
 // Set sets a metadata attribute.
-func (m *Metadata) Set(key, value string) {
+func (m *Metadata) Set(key string, value interface{}) {
 	if m.Attr == nil {
-		m.Attr = make(map[string]string)
+		m.Attr = make(map[string]interface{})
 	}
 	m.Attr[key] = value
 
@@ -109,7 +112,7 @@ func (m *Metadata) Set(key, value string) {
 }
 
 // Get returns a metadata attribute.
-func (m *Metadata) Get(key string) string {
+func (m *Metadata) Get(key string) interface{} {
 	return m.Attr[key]
 }
 
@@ -222,22 +225,20 @@ func Merge(v ...*Metadata) *Metadata {
 	return result
 }
 
-func timeBetter(val, than string) bool {
-	const zoneScore = 2
-
-	v := ParseTime(val)
-	vscore := v.Prec
-	if v.Prec > 3 && v.HasLoc {
-		vscore += zoneScore
+func timeBetter(val, than interface{}) bool {
+	tv, ok := val.(time.Time)
+	if !ok {
+		return true
 	}
+	vallocal := tv.Location() == time.Local
 
-	t := ParseTime(than)
-	tscore := t.Prec
-	if t.Prec > 3 && t.HasLoc {
-		tscore += zoneScore
+	tt, ok := than.(time.Time)
+	if !ok {
+		return false
 	}
+	thanlocal := tt.Location() == time.Local
 
-	return vscore > tscore
+	return vallocal && !thanlocal
 }
 
 func setOf(v ...string) map[string]struct{} {
@@ -248,39 +249,41 @@ func setOf(v ...string) map[string]struct{} {
 	return m
 }
 
-type updateFunc func(m *Metadata, value string)
+type updateFunc func(m *Metadata, value interface{})
 
 var updateValue = map[string]updateFunc{
-	DateTimeOriginal: func(m *Metadata, v string) { updateTime(&m.DateTimeOriginal, v) },
-	DateTimeCreated:  func(m *Metadata, v string) { updateTime(&m.DateTimeCreated, v) },
-	GPSDateTime:      func(m *Metadata, v string) { updateTimeTime(&m.GPS.Time, v) },
+	DateTimeOriginal: func(m *Metadata, v interface{}) { updateTime(&m.DateTimeOriginal, v) },
+	DateTimeCreated:  func(m *Metadata, v interface{}) { updateTime(&m.DateTimeCreated, v) },
+	GPSDateTime:      func(m *Metadata, v interface{}) { updateTime(&m.GPS.Time, v) },
 	GPSLatitude:      updateLatLong,
 	GPSLongitude:     updateLatLong,
-	Orientation:      func(m *Metadata, v string) { updateInt(&m.Orientation, v) },
-	Rating:           func(m *Metadata, v string) { updateInt(&m.Rating, v) },
-	Make:             func(m *Metadata, v string) { m.Make = v },
-	Model:            func(m *Metadata, v string) { m.Model = v },
+	Orientation:      func(m *Metadata, v interface{}) { updateInt(&m.Orientation, v) },
+	Rating:           func(m *Metadata, v interface{}) { updateInt(&m.Rating, v) },
+	Make:             func(m *Metadata, v interface{}) { updateString(&m.Make, v) },
+	Model:            func(m *Metadata, v interface{}) { updateString(&m.Model, v) },
 }
 
-func updateTime(p *Time, v string) {
-	*p = ParseTime(v)
+func updateString(p *string, v interface{}) {
+	if s, ok := v.(string); ok {
+		*p = s
+	}
 }
 
-func updateTimeTime(p *time.Time, v string) {
-	if t, err := time.Parse(time.RFC3339, v); err == nil {
+func updateTime(p *time.Time, v interface{}) {
+	if t, ok := v.(time.Time); ok {
 		*p = t
 	}
 }
 
-func updateInt(p *int, v string) {
-	if i, err := strconv.Atoi(v); err == nil {
+func updateInt(p *int, v interface{}) {
+	if i, ok := v.(int); ok {
 		*p = i
 	}
 }
 
-func updateLatLong(m *Metadata, v string) {
-	var laterr, lonerr error
-	m.GPS.Latitude, laterr = strconv.ParseFloat(m.Get(GPSLatitude), 64)
-	m.GPS.Longitude, lonerr = strconv.ParseFloat(m.Get(GPSLongitude), 64)
-	m.GPS.Valid = laterr == nil && lonerr == nil
+func updateLatLong(m *Metadata, v interface{}) {
+	var latok, lonok bool
+	m.GPS.Latitude, latok = m.Get(GPSLatitude).(float64)
+	m.GPS.Longitude, lonok = m.Get(GPSLongitude).(float64)
+	m.GPS.Valid = latok && lonok
 }

@@ -93,7 +93,7 @@ func testSexagesimalV(t *testing.T, r Rational, res uint32, val uint64) {
 func testSexagesimalImpl(t *testing.T, r Rational, res uint32, val uint64, tval bool) {
 	hi, lo, ok := r.Sexagesimal(res)
 	if !ok {
-		t.Error("Rational.Sexagesimal %v invalid", r)
+		t.Errorf("Rational.Sexagesimal %v invalid", r)
 		return
 	}
 
