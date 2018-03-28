@@ -2,32 +2,67 @@ package xmp
 
 import (
 	"encoding/xml"
+	"errors"
 	"io"
+
+	"github.com/tajtiattila/xmlutil"
 )
 
 type Meta struct {
-	XMLName xml.Name `xml:"adobe:ns:meta/ xmpmeta"`
-	Rdf     Rdf      `xml:"http://www.w3.org/1999/02/22-rdf-syntax-ns# RDF"`
-}
+	Doc xmlutil.Document
 
-type Rdf struct {
-	Desc []Node `xml:"http://www.w3.org/1999/02/22-rdf-syntax-ns# Description"`
-}
-
-type Node struct {
-	XMLName  xml.Name
-	Node     []Node `xml:",any"`
-	CharData []byte `xml:",chardata"`
+	cache map[xml.Name]*xmlutil.Node
 }
 
 func Decode(r io.Reader) (*Meta, error) {
 	m := new(Meta)
-	err := xml.NewDecoder(r).Decode(m)
-	if err != nil {
+	if err := xml.NewDecoder(r).Decode(&m.Doc); err != nil {
+		return nil, err
+	}
+
+	if err := m.cacheRdfs(); err != nil {
 		return nil, err
 	}
 
 	return m, nil
+}
+
+const (
+	metans = "adobe:ns:meta/"
+	rdfns  = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+)
+
+var ErrInvalidXMLFormat = errors.New("xmp: invalid XML format")
+
+func (m *Meta) cacheRdfs() error {
+	root := m.Doc.Node
+	if root.Name == xmlName(metans, "xmpmeta") {
+		if len(root.Child) != 1 {
+			return ErrInvalidXMLFormat
+		}
+		root = root.Child[0]
+	}
+
+	if root.Name != xmlName(rdfns, "RDF") {
+		return ErrInvalidXMLFormat
+	}
+
+	m.cache = make(map[xml.Name]*xmlutil.Node)
+	for _, n := range root.Child {
+		m.cacheNodes(n)
+	}
+
+	return nil
+}
+
+func (m *Meta) cacheNodes(n *xmlutil.Node) {
+	if n.Name != xmlName(rdfns, "Description") {
+		return
+	}
+
+	for _, c := range n.Child {
+		m.cache[c.Name] = c
+	}
 }
 
 func (m *Meta) String(f StringFunc) (value string, ok bool) {
