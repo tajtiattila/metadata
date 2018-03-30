@@ -1,6 +1,4 @@
 // Package metadata parses metadata in media files.
-//
-// Currently metadata in JPEG (Exif and XMP) and MP4 (XMP) formats are supported.
 package metadata
 
 import (
