@@ -1,5 +1,6 @@
 package metadata
 
+/*
 import (
 	"bytes"
 	"fmt"
@@ -70,3 +71,4 @@ func xmpInt(a xmp.IntFunc) func(x *xmp.Meta) (string, bool) {
 		return "", false
 	}
 }
+*/

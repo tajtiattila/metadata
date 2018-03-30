@@ -93,7 +93,7 @@ func xmlName(space, local string) xml.Name {
 }
 
 func findString(m *Meta, name xml.Name) (s string, ok bool) {
-	n, ok := m.cache[name]
+	n, ok := m.attr[name]
 	if !ok {
 		return "", false
 	}

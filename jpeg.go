@@ -63,17 +63,19 @@ func parseJpeg(r io.Reader) (*Metadata, error) {
 		}
 	}
 
-	if xmp != nil {
-		m, err := FromXMPBytes(xmp)
-		if m != nil {
-			meta = append(meta, m)
-		}
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
+	/*
+		if xmp != nil {
+			m, err := FromXMPBytes(xmp)
+			if m != nil {
+				meta = append(meta, m)
+			}
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
 			}
 		}
-	}
+	*/
 
 	if len(meta) == 0 {
 		err := firstErr

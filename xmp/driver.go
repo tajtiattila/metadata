@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/tajtiattila/metadata"
 	"github.com/tajtiattila/metadata/driver"
 	"github.com/tajtiattila/xmlutil"
 )
@@ -23,17 +24,40 @@ func init() {
 const (
 	xmpPrefix = `<?xpacket begin="?" id="W5M0MpCehiHzreSzNTczkc9d"?>`
 	xmpSuffix = `<?xpacket end="w"?>`
+
+	toolkit = "github.com/tajtiattila/metadata/xmp"
 )
 
+var _ driver.Metadata = new(Meta)
+
 func (m *Meta) UnmarshalMetadata(p []byte) error {
-	err := xml.Unmarshal(p, &m.Doc)
+	var doc xmlutil.Document
+	err := xml.Unmarshal(p, &doc)
 	if err != nil {
 		return errors.Wrap(err, "xmp: unmarshal failed")
 	}
+	m.Doc = doc
 	return nil
 }
 
 func (m *Meta) MarshalMetadata() ([]byte, error) {
+	if m.Doc.Node == nil {
+		return nil, errors.New("xmp: empty document")
+	}
+
+	if m.Doc.Node.Name == xmlName(rdfns, "RDF") {
+		// add xmpmeta
+		xm := &xmlutil.Node{
+			Name: xmlName(metans, "xmpmeta"),
+			Attr: xattr(
+				"xmlns", "x", metans,
+				metans, "xmptk", toolkit,
+			),
+			Child: []*xmlutil.Node{m.Doc.Node},
+		}
+		m.Doc.Node = xm
+	}
+
 	buf := new(bytes.Buffer)
 	buf.WriteString(xmpPrefix + "\n")
 
@@ -44,7 +68,7 @@ func (m *Meta) MarshalMetadata() ([]byte, error) {
 		return nil, errors.Wrap(err, "xmp: marshal failed")
 	}
 
-	buf.WriteString(xmpSuffix + "\n")
+	buf.WriteString("\n" + xmpSuffix + "\n")
 
 	// TODO:
 	// It is recommended that applications place 2 KB to 4 KB of padding
@@ -62,7 +86,7 @@ func (m *Meta) GetMetadataAttr(attr string) interface{} {
 		return nil
 	}
 
-	node, ok := m.cache(a.xmlName)
+	node, ok := m.attr[a.xmlName]
 	if !ok {
 		return nil
 	}
@@ -76,9 +100,55 @@ func (m *Meta) SetMetadataAttr(attr string, value interface{}) error {
 		return errors.Errorf("xmp: unknown attr %q", attr)
 	}
 	node := a.toXML(value)
-	if !node {
+	if node == nil {
 		return errors.Errorf("xmp: can't store %v (type %T) in attr %q", value, value, attr)
 	}
+	node.Name = a.xmlName
+
+	descr := m.getDescr(a.xmlName.Space)
+	if descr == nil {
+		return errors.Errorf("xmp: unknown namespace for attr %q", attr)
+	}
+
+	for i, n := range descr.Child {
+		if n.Name == a.xmlName {
+			// replace existing node
+			descr.Child[i] = node
+			return nil
+		}
+	}
+
+	// add new node
+	descr.Child = append(descr.Child, node)
+
+	if m.attr == nil {
+		m.attr = make(map[xml.Name]*xmlutil.Node)
+	}
+	m.attr[a.xmlName] = node
+
+	return nil
+}
+
+func (m *Meta) DeleteMetadataAttr(attr string) error {
+	a, ok := attrConv[attr]
+	if !ok {
+		return errors.Errorf("xmp: unknown attr %q", attr)
+	}
+
+	for _, descr := range m.descr {
+		for i := 0; i < len(descr.Child); {
+			if descr.Child[i].Name == a.xmlName {
+				descr.Child = append(descr.Child[:i], descr.Child[i+1:]...)
+			} else {
+				i++
+			}
+		}
+	}
+
+	if m.attr != nil {
+		delete(m.attr, a.xmlName)
+	}
+	return nil
 }
 
 type nodeConv struct {
@@ -112,6 +182,7 @@ func init() {
 				}
 			},
 		}
+		attrConv[metaName] = nc
 	}
 
 	attr(metadata.DateTimeCreated, xmpns, "CreateDate", timeConv)
@@ -119,7 +190,7 @@ func init() {
 	attr(metadata.DateTimeOriginal, exifns, "DateTimeOriginal", timeConv)
 	attr(metadata.GPSLatitude, exifns, "GPSLatitude", coordConv('N', 'S'))
 	attr(metadata.GPSLongitude, exifns, "GPSLongitude", coordConv('E', 'W'))
-	attr(metadata.GPSTimeStamp, exifns, "GPSTimeStamp", timeConv)
+	attr(metadata.GPSDateTime, exifns, "GPSTimeStamp", timeConv)
 
 	attr(metadata.Orientation, exifns, "Orientation", intConv)
 
@@ -129,64 +200,58 @@ func init() {
 
 type valueConv struct {
 	parse  func(s string) interface{}
-	format func(v interface{}) (string, ok)
+	format func(v interface{}) (string, bool)
 }
 
-func stringConv() valueConv {
-	return valueConv{
-		parse: func(s string) interface{} {
-			return s
-		},
-		format: func(v interface{}) (string, bool) {
-			s, ok := v.(string)
-			return s, ok
-		},
-	}
+var stringConv = valueConv{
+	parse: func(s string) interface{} {
+		return s
+	},
+	format: func(v interface{}) (string, bool) {
+		s, ok := v.(string)
+		return s, ok
+	},
 }
 
-func intConv() valueConv {
-	return valueConv{
-		parse: func(s string) interface{} {
-			v, ok := strconv.Atoi(s)
-			if ok {
-				return v
-			}
-			return nil
-		},
-		format: func(v interface{}) (string, bool) {
-			i, ok := v.(int)
-			if !ok {
-				return "", false
-			}
-			return fmt.Sprint(i), true
-		},
-	}
+var intConv = valueConv{
+	parse: func(s string) interface{} {
+		v, err := strconv.Atoi(s)
+		if err == nil {
+			return v
+		}
+		return nil
+	},
+	format: func(v interface{}) (string, bool) {
+		i, ok := v.(int)
+		if !ok {
+			return "", false
+		}
+		return fmt.Sprint(i), true
+	},
 }
 
-func timeConv() valueConv {
-	const (
-		fmt      = time.RFC3339
-		fmtLocal = "2006-01-02T15:04:05"
-	)
+const (
+	timeFmt      = time.RFC3339
+	timeFmtLocal = "2006-01-02T15:04:05"
+)
 
-	return valueConv{
-		parse: func(s string) interface{} {
-			if t, err := time.ParseInLocation(fmt, s, time.UTC); err == nil {
-				return t
-			}
-			if t, err := time.ParseInLocation(fmtLocal, s, time.Local); err == nil {
-				return t
-			}
-			return nil
-		},
-		format: func(v interface{}) (string, bool) {
-			t, ok := v.(time.Time)
-			if !ok {
-				return "", false
-			}
-			return t.Format(fmt), true
-		},
-	}
+var timeConv = valueConv{
+	parse: func(s string) interface{} {
+		if t, err := time.ParseInLocation(timeFmt, s, time.UTC); err == nil {
+			return t
+		}
+		if t, err := time.ParseInLocation(timeFmtLocal, s, time.Local); err == nil {
+			return t
+		}
+		return nil
+	},
+	format: func(v interface{}) (string, bool) {
+		t, ok := v.(time.Time)
+		if !ok {
+			return "", false
+		}
+		return t.Format(timeFmt), true
+	},
 }
 
 func coordConv(pos, neg byte) valueConv {
@@ -202,6 +267,7 @@ func coordConv(pos, neg byte) valueConv {
 				return nil
 			}
 
+			var value float64
 			div := float64(1)
 			for _, p := range strings.Split(s[:len(s)-1], ",") {
 				num, err := strconv.ParseFloat(p, 64)
@@ -233,28 +299,3 @@ func coordConv(pos, neg byte) valueConv {
 		},
 	}
 }
-
-/*
-	DateTimeOriginal = "DateTimeOriginal"
-
-	// original file creation date (eg. time of scan)
-	DateTimeCreated = "DateTimeCreated"
-
-	// Date/time of GPS fix (RFC3339, always UTC)
-	GPSDateTime = "GPSDateTime"
-
-	// latitude and longitude are signed floating point
-	// values formatted with no exponent
-	GPSLatitude  = "GPSLatitude"  // +north, -south
-	GPSLongitude = "GPSLongitude" // +east, -west
-
-	// Orientation (integer) 1..8, values are like exif
-	Orientation = "Orientation"
-
-	// XMP Rating (integer), -1: rejected, 0: unrated, 1..5: user rating
-	Rating = "Rating"
-
-	// recording equipment manufacturer and model name/number name
-	Make  = "Make"
-	Model = "Model"
-*/

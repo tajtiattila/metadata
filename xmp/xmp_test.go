@@ -1,25 +1,28 @@
-package xmp
+package xmp_test
 
 import (
 	"bytes"
 	"encoding/xml"
 	"strings"
 	"testing"
+
+	"github.com/tajtiattila/metadata"
+	"github.com/tajtiattila/metadata/xmp"
 )
 
 func TestDecode(t *testing.T) {
-	x, err := Decode(strings.NewReader(sample))
+	x, err := xmp.Decode(strings.NewReader(sample))
 	if err != nil {
 		t.Fatal("can't decode sample:", err)
 	}
 
-	lat, ok := x.Float64(GPSLatitude)
+	lat, ok := x.Float64(xmp.GPSLatitude)
 	if !ok {
 		t.Error("missing GPSLatitude")
 	} else {
 		t.Logf("GPSLatitude=%f", lat)
 	}
-	lon, ok := x.Float64(GPSLongitude)
+	lon, ok := x.Float64(xmp.GPSLongitude)
 	if !ok {
 		t.Error("missing GPSLongitude")
 	} else {
@@ -112,7 +115,7 @@ const sample = `<?xpacket begin='` + "\ufeff" + `' id='W5M0MpCehiHzreSzNTczkc9d'
 <?xpacket end='w'?>`
 
 func TestXMPEncode(t *testing.T) {
-	x, err := Decode(strings.NewReader(sample))
+	x, err := xmp.Decode(strings.NewReader(sample))
 	if err != nil {
 		t.Fatal("can't decode sample:", err)
 	}
@@ -125,4 +128,31 @@ func TestXMPEncode(t *testing.T) {
 	}
 
 	t.Log(buf.String())
+}
+
+func TestDriver(t *testing.T) {
+	m := new(xmp.Meta)
+	m.SetMetadataAttr(metadata.GPSLatitude, 55.751244)
+	m.SetMetadataAttr(metadata.GPSLongitude, 37.618423)
+	got, err := m.MarshalMetadata()
+	if err != nil {
+		t.Fatal("can't marshal metadata", err)
+	}
+	want := []byte(`<?xpacket begin="?" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="github.com/tajtiattila/metadata/xmp">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/">
+   <exif:GPSLatitude>55,45.074640N</exif:GPSLatitude>
+   <exif:GPSLongitude>37,37.105380E</exif:GPSLongitude>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+`)
+	if !bytes.Equal(got, want) {
+		t.Log("driver marshal mismatch")
+		t.Logf("got: %s", got)
+		t.Logf("want: %s", want)
+		t.Fail()
+	}
 }

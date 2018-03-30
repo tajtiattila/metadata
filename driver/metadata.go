@@ -3,20 +3,25 @@ package driver
 import "github.com/pkg/errors"
 
 type Metadata interface {
+	MetadataName() string
+
 	UnmarshalMetadata([]byte) error
 	MarshalMetadata() ([]byte, error)
 
 	GetMetadataAttr(attr string) interface{}
 	SetMetadataAttr(attr string, value interface{}) error
+	DeleteMetadataAttr(attr string) error
 }
 
 func RegisterMetadataFormat(name string, newm func() Metadata) {
 	if metadataFormats == nil {
-		if _, ok := metadataFormats[name]; ok {
-			panic(errors.Errorf("duplicate metadata format %q", name))
-		}
-		metadataFormats[name] = newm
+		metadataFormats = make(map[string]newMetadataFunc)
 	}
+
+	if _, ok := metadataFormats[name]; ok {
+		panic(errors.Errorf("duplicate metadata format %q", name))
+	}
+	metadataFormats[name] = newm
 }
 
 func NewMetadata(name string) Metadata {

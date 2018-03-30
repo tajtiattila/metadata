@@ -11,7 +11,14 @@ import (
 type Meta struct {
 	Doc xmlutil.Document
 
-	cache map[xml.Name]*xmlutil.Node
+	rdf *xmlutil.Node
+
+	// attr maps xmp attribute names to their respective nodes
+	attr map[xml.Name]*xmlutil.Node
+
+	// descr maps xml namespaces such as xmpns, exifns...
+	// to their respecrive <rdf:Description> nodes.
+	descr map[string]*xmlutil.Node
 }
 
 func Decode(r io.Reader) (*Meta, error) {
@@ -47,7 +54,9 @@ func (m *Meta) cacheRdfs() error {
 		return ErrInvalidXMLFormat
 	}
 
-	m.cache = make(map[xml.Name]*xmlutil.Node)
+	m.rdf = root
+
+	m.attr = make(map[xml.Name]*xmlutil.Node)
 	for _, n := range root.Child {
 		m.cacheNodes(n)
 	}
@@ -60,9 +69,77 @@ func (m *Meta) cacheNodes(n *xmlutil.Node) {
 		return
 	}
 
-	for _, c := range n.Child {
-		m.cache[c.Name] = c
+	for _, a := range n.Attr {
+		if a.Name.Space == "xmlns" {
+			if m.descr == nil {
+				m.descr = make(map[string]*xmlutil.Node)
+			}
+			m.descr[a.Value] = n
+		}
 	}
+
+	for _, c := range n.Child {
+		m.attr[c.Name] = c
+	}
+}
+
+func (m *Meta) getDescr(ns string) *xmlutil.Node {
+	n, ok := m.descr[ns]
+	if ok {
+		return n
+	}
+
+	if m.rdf == nil {
+		m.rdf = &xmlutil.Node{
+			Name: xmlName(rdfns, "RDF"),
+			Attr: xattr("xmlns", "rdf", rdfns),
+		}
+		m.Doc.Node = m.rdf
+	}
+
+	a := []string{rdfns, "about", ""}
+
+	if prefix, ok := namespacePrefixMap[ns]; ok {
+		a = append(a, "xmlns", prefix, ns)
+	}
+
+	descr := &xmlutil.Node{
+		Name: xmlName(rdfns, "Description"),
+		Attr: xattr(a...),
+	}
+	m.rdf.Child = append(m.rdf.Child, descr)
+
+	if m.descr == nil {
+		m.descr = make(map[string]*xmlutil.Node)
+	}
+	m.descr[ns] = descr
+
+	return descr
+}
+
+func xattr(v ...string) []xml.Attr {
+	if len(v)%3 != 0 {
+		panic("invalid attr triplet")
+	}
+	var attrs []xml.Attr
+	for i := 0; i < len(v); i += 3 {
+		attrs = append(attrs, xml.Attr{
+			Name: xml.Name{
+				Space: v[i],
+				Local: v[i+1],
+			},
+			Value: v[i+2],
+		})
+	}
+	return attrs
+}
+
+var namespacePrefixMap = map[string]string{
+	xmpns:  "xmp",
+	exifns: "exif",
+	tiffns: "tiff",
+
+	"http://cipa.jp/exif/1.0/": "exifEX",
 }
 
 func (m *Meta) String(f StringFunc) (value string, ok bool) {
