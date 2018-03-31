@@ -227,7 +227,7 @@ func (j *Scanner) IsChunk(marker byte, prefix []byte) bool {
 	if len(prefix) > MaxPrefixLen {
 		// Test agains overlong prefix could
 		// fail even if the stream had the prefix,
-		// we just haven't bufferet it.
+		// we just haven't buffered it.
 		panic("IsChunk prefix too long")
 	}
 	if !j.StartChunk() || len(j.p) < 4 || j.p[0] != 0xff || j.p[1] != marker {

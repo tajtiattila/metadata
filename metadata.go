@@ -116,7 +116,7 @@ func (m *Metadata) Get(key string) interface{} {
 
 // ErrUnknownFormat is returned by Parse and ParseAt when the file format
 // is not understood by this package.
-var ErrUnknownFormat = errors.New("metadata: unknown content format")
+var ErrUnknownFormat = driver.ErrUnknownFormat
 
 // ErrNoMeta is returned by Parse and ParseAt when the file format
 // was recognised but no metadata was found.

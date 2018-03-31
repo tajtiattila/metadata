@@ -1,5 +1,6 @@
 package metadata
 
+/*
 import (
 	"github.com/tajtiattila/metadata/exif"
 	"github.com/tajtiattila/metadata/exif/exiftag"
@@ -47,3 +48,4 @@ func FromExif(x *exif.Exif) *Metadata {
 	}
 	return m
 }
+*/

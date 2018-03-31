@@ -190,14 +190,37 @@ func (x *Exif) SetLatLong(lat, long float64) {
 	})
 }
 
+func (x *Exif) gpsCoord(valt, reft uint32, pos, neg string) (float64, bool) {
+	sig, ok := locSig(x.Tag(ref), pos, neg)
+	if !ok {
+		return 0, false
+	}
+	abs, ok := degHourMin(x.Tag(valt))
+	if !ok {
+		return 0, false
+	}
+	return abs * sig, true
+}
+
+func (x *Exif) setGpsCoord(valt, reft uint32, pos, neg string, val float64) {
+	var sig string
+	if lat >= 0 {
+		sig = pos
+	} else {
+		sig = neg
+		val = -val
+	}
+
+	x.Set(valt, toDegHourMin(val))
+	x.Set(reft, sig)
+}
+
 // LatLong reports the GPS latitude and longitude.
-func (x *Exif) LatLong() (lat, long float64, ok bool) {
-	latsig, ok1 := locSig(x.Tag(exiftag.GPSLatitudeRef), "N", "S")
-	lonsig, ok2 := locSig(x.Tag(exiftag.GPSLongitudeRef), "E", "W")
-	latabs, ok3 := degHourMin(x.Tag(exiftag.GPSLatitude))
-	lonabs, ok4 := degHourMin(x.Tag(exiftag.GPSLongitude))
-	if ok1 && ok2 && ok3 && ok4 {
-		return latsig * latabs, lonsig * lonabs, true
+func (x *Exif) LatLong() (lat, lon float64, ok bool) {
+	lat, latok := x.gpsCoord(exiftag.GPSLatitude, exiftag.GPSLatitudeRef, "N", "S")
+	lon, lonok := x.gpsCoord(exiftag.GPSLongitude, exiftag.GPSLongitudeRef, "E", "W")
+	if latok && lonok {
+		return lat, lon, ok
 	}
 
 	return 0, 0, false
