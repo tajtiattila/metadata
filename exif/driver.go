@@ -5,19 +5,19 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/tajtiattila/metadata/driver"
 	"github.com/tajtiattila/metadata/exif/exiftag"
+	"github.com/tajtiattila/metadata/metaio"
 )
 
 func init() {
-	driver.RegisterMetadataFormat("exif", func(opt ...driver.Option) driver.Metadata {
+	metaio.RegisterMetadataFormat("exif", func(opt ...metaio.Option) metaio.Metadata {
 		x := &Exif{
 			ByteOrder: binary.BigEndian,
 		}
 
-		var imageSize *driver.ImageSize
+		var imageSize *metaio.ImageSize
 		for _, o := range opt {
-			if is, ok := o.(driver.ImageSize); ok {
+			if is, ok := o.(metaio.ImageSize); ok {
 				imageSize = &is
 			}
 		}

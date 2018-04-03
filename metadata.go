@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"time"
+
+	"github.com/tajtiattila/metadata/metaio"
 )
 
 // Metadata records file metadata.
@@ -72,30 +74,48 @@ type GPSInfo struct {
 // Date/time values are formatted as expected by
 // the Time type of this package.
 const (
-	// date of original image (eg. scanned photo)
+	// image or frame dimensinos [int]
+	ImageWidth  = "ImageWidth"
+	ImageHeight = "ImageHeight"
+
+	// date of original image (eg. scanned photo) [time.Time]
 	DateTimeOriginal = "DateTimeOriginal"
 
-	// original file creation date (eg. time of scan)
+	// original file creation date (eg. time of scan) [time.Time]
 	DateTimeCreated = "DateTimeCreated"
 
-	// Date/time of GPS fix (RFC3339, always UTC)
+	// Date/time of GPS fix (RFC3339, always UTC) [time.Time]
 	GPSDateTime = "GPSDateTime"
 
 	// latitude and longitude are signed floating point
-	// values formatted with no exponent
+	// values formatted with no exponent [float64]
 	GPSLatitude  = "GPSLatitude"  // +north, -south
 	GPSLongitude = "GPSLongitude" // +east, -west
 
-	// Orientation (integer) 1..8, values are like exif
+	// Orientation [int] 1..8, values are like exif
 	Orientation = "Orientation"
 
-	// XMP Rating (integer), -1: rejected, 0: unrated, 1..5: user rating
+	// XMP Rating [int], -1: rejected, 0: unrated, 1..5: user rating
 	Rating = "Rating"
 
-	// recording equipment manufacturer and model name/number name
+	// recording equipment manufacturer and model name/number name [string]
 	Make  = "Make"
 	Model = "Model"
 )
+
+var attrNames = []string{
+	ImageWidth, ImageHeight,
+
+	DateTimeOriginal, DateTimeCreated,
+
+	GPSDateTime, GPSLatitude, GPSLongitude,
+
+	Orientation,
+
+	Rating,
+
+	Make, Model,
+}
 
 // Set sets a metadata attribute.
 func (m *Metadata) Set(key string, value interface{}) {
@@ -116,13 +136,11 @@ func (m *Metadata) Get(key string) interface{} {
 
 // ErrUnknownFormat is returned by Parse and ParseAt when the file format
 // is not understood by this package.
-var ErrUnknownFormat = driver.ErrUnknownFormat
+var ErrUnknownFormat = metaio.ErrUnknownFormat
 
 // ErrNoMeta is returned by Parse and ParseAt when the file format
 // was recognised but no metadata was found.
 var ErrNoMeta = errors.New("metadata: no metadata found")
-
-const sniffLen = 256
 
 // Parse parses metadata from r, and returns the metadata found
 // and the first error encountered.
@@ -134,18 +152,49 @@ const sniffLen = 256
 //
 // If r is also an io.Seeker, then it is used to seek within r.
 func Parse(r io.Reader) (*Metadata, error) {
-	p := make([]byte, sniffLen)
-	n, err := io.ReadFull(r, p)
-	switch err {
-	case io.ErrUnexpectedEOF:
-		err = io.EOF
-	case io.EOF, nil:
-		// pass
-	default:
-		return nil, err
+	sniffLen := metaio.ContainerPeekLen()
+	if sniffLen == 0 {
+		// no registered format
+		return nil, ErrUnknownFormat
 	}
 
-	return parse(p[:n], prefixReader(p, r))
+	p := make([]byte, sniffLen)
+
+	r, err := peek(r, p)
+	if err != nil {
+		return nil, ErrUnknownFormat
+	}
+
+	cf, _ := metaio.GetContainerFormat(p)
+	if cf == nil {
+		return nil, ErrUnknownFormat
+	}
+
+	var metaErr error
+	result := new(Metadata)
+	_, err = cf.Scan(r, func(name string, data []byte) {
+		m := metaio.NewMetadata(name)
+		if m == nil {
+			return
+		}
+
+		if err := m.UnmarshalMetadata(data); err != nil {
+			if metaErr == nil {
+				metaErr = err
+			}
+			return
+		}
+
+		for _, n := range attrNames {
+			result.update(n, m.GetMetadataAttr(n))
+		}
+	})
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, metaErr
 }
 
 // ParseAt parses metadata from r, and returns the metadata found
@@ -159,15 +208,29 @@ func ParseAt(r io.ReaderAt) (*Metadata, error) {
 	return Parse(&atReadSeeker{0, r})
 }
 
-func parse(p []byte, r io.Reader) (*Metadata, error) {
-	if isjpeg(p) {
-		return parseJpeg(r)
-	}
-	if ismp4(p) {
-		return parseMP4(r)
+func peek(r io.Reader, p []byte) (io.Reader, error) {
+	if ra, ok := r.(io.ReaderAt); ok {
+		_, err := ra.ReadAt(p, 0)
+		if err != nil {
+			return nil, err
+		}
+		return r, nil
 	}
 
-	return nil, ErrUnknownFormat
+	if _, err := io.ReadFull(r, p); err != nil {
+		return nil, ErrUnknownFormat
+	}
+
+	if rs, ok := r.(io.ReadSeeker); ok {
+		if _, err := rs.Seek(0, io.SeekStart); err == nil {
+			return r, nil
+		}
+		// seeker can't seek
+	}
+
+	buf := make([]byte, len(p))
+	copy(buf, p)
+	return io.MultiReader(bytes.NewReader(buf), r), nil
 }
 
 func isjpeg(p []byte) bool {
@@ -195,8 +258,17 @@ func ismp4(p []byte) bool {
 	return true
 }
 
-// TimeAttrs lists time attributes recognised in Merge.
-var TimeAttrs = setOf(DateTimeOriginal, DateTimeCreated, GPSDateTime)
+func (m *Metadata) update(attr string, value interface{}) {
+	if value == nil {
+		return
+	}
+	if t, ok := value.(time.Time); ok {
+		if existing, ok := m.Attr[attr]; ok && timeBetter(existing, t) {
+			return
+		}
+	}
+	m.Set(attr, value)
+}
 
 // Merge merges metadata from multiple sources.
 func Merge(v ...*Metadata) *Metadata {
@@ -210,31 +282,26 @@ func Merge(v ...*Metadata) *Metadata {
 	result := new(Metadata)
 	for _, m := range v {
 		for key, val := range m.Attr {
-			if _, ok := TimeAttrs[key]; ok {
-				r, ok := result.Attr[key]
-				if !ok || timeBetter(val, r) {
-					result.Set(key, val)
+			if t, ok := val.(time.Time); ok {
+				existing, ok := result.Attr[key]
+				if ok || timeBetter(existing, t) {
+					continue
 				}
-			} else {
-				result.Set(key, val)
 			}
+			result.Set(key, val)
 		}
 	}
 	return result
 }
 
-func timeBetter(val, than interface{}) bool {
+func timeBetter(val interface{}, than time.Time) bool {
 	tv, ok := val.(time.Time)
 	if !ok {
 		return true
 	}
 	vallocal := tv.Location() == time.Local
 
-	tt, ok := than.(time.Time)
-	if !ok {
-		return false
-	}
-	thanlocal := tt.Location() == time.Local
+	thanlocal := than.Location() == time.Local
 
 	return vallocal && !thanlocal
 }

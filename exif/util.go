@@ -29,7 +29,7 @@ func New(dx, dy int) *Exif {
 		ent(exiftag.FlashpixVersion, Undef("0100")),
 
 		ent(exiftag.PixelXDimension, Long{uint32(dx)}),
-		ent(exiftag.PixelYDimension, Long{uint32(dx)}),
+		ent(exiftag.PixelYDimension, Long{uint32(dy)}),
 
 		// centered subsampling
 		ent(exiftag.YCbCrPositioning, Short{1}),
@@ -99,6 +99,14 @@ func (x *Exif) SetDateTime(t time.Time) {
 
 	x.Set(exiftag.DateTime, v)
 	x.Set(exiftag.SubSecTime, subv)
+}
+
+func (x *Exif) initGPSVersion() {
+	v = x.Tag(exiftag.GPSVersionID).Byte()
+	if len(v) == 0 {
+		v = []byte{2, 2, 0, 0}
+		x.Set(exiftag.GPSVersionID, Byte(v))
+	}
 }
 
 // GPSInfo represents GPS information within Exif.
@@ -202,7 +210,7 @@ func (x *Exif) gpsCoord(valt, reft uint32, pos, neg string) (float64, bool) {
 	return abs * sig, true
 }
 
-func (x *Exif) setGpsCoord(valt, reft uint32, pos, neg string, val float64) {
+func (x *Exif) setGPSCoord(valt, reft uint32, pos, neg string, val float64) {
 	var sig string
 	if lat >= 0 {
 		sig = pos

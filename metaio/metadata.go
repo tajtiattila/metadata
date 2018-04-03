@@ -1,14 +1,6 @@
-package driver
+package metaio
 
 import "github.com/pkg/errors"
-
-// Option is used in Metadata initialization.
-type Option interface{}
-
-// ImageSize is a metadata option stating image size.
-type ImageSize struct {
-	Width, Height int
-}
 
 type Metadata interface {
 	MetadataName() string
@@ -21,7 +13,7 @@ type Metadata interface {
 	DeleteMetadataAttr(attr string) error
 }
 
-func RegisterMetadataFormat(name string, newm func(...Option) Metadata) {
+func RegisterMetadataFormat(name string, newm func() Metadata) {
 	if metadataFormats == nil {
 		metadataFormats = make(map[string]newMetadataFunc)
 	}
@@ -32,13 +24,13 @@ func RegisterMetadataFormat(name string, newm func(...Option) Metadata) {
 	metadataFormats[name] = newm
 }
 
-func NewMetadata(name string, opt ...Option) Metadata {
+func NewMetadata(name string) Metadata {
 	if f, ok := metadataFormats[name]; ok {
-		return f(opt...)
+		return f()
 	}
 	return nil
 }
 
-type newMetadataFunc func(opt ...Option) Metadata
+type newMetadataFunc func() Metadata
 
 var metadataFormats map[string]newMetadataFunc

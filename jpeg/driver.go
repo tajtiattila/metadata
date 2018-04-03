@@ -4,22 +4,11 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/pkg/errors"
-	"github.com/tajtiattila/metadata/driver"
+	"github.com/tajtiattila/metadata/metaio"
 )
 
 func init() {
-	driver.RegisterContainerFormat("jpeg", "\xff\xd8\xff", func() driver.Container {
-		return new(container)
-	})
-}
-
-var _ driver.Container = new(container)
-
-type container struct {
-	r io.Reader
-
-	rawMeta []driver.RawMeta
+	metaio.RegisterContainerFormat("jpeg", "\xff\xd8\xff", jpegFmt{})
 }
 
 var jpegExifPfx = []byte("Exif\x00\x00")
@@ -28,94 +17,71 @@ var jpegXMPPfx = []byte("http://ns.adobe.com/xap/1.0/\x00")
 var jfifChunkHeader = []byte("JFIF\x00")
 var jfxxChunkHeader = []byte("JFXX\x00")
 
-func (c *container) Parse(r io.Reader) error {
+type jpegFmt struct{}
+
+var _ metaio.ContainerFormat = jpegFmt{}
+
+func (jpegFmt) Scan(r io.Reader, f func(name string, data []byte)) (map[string]interface{}, error) {
 	j, err := NewScanner(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	var ex, xmp []byte
-	for (ex == nil || xmp == nil) && j.NextChunk() {
+	for j.NextChunk() {
 		p := j.Bytes()
 		if len(p) < 4 || p[0] != 0xff || p[1] != 0xe1 {
 			continue
 		}
 
-		var pdata *[]byte
+		var name string
 		var trim int
 		switch {
-		case ex == nil && j.IsChunk(0xe1, jpegExifPfx):
-			pdata, trim = &ex, len(jpegExifPfx)
-		case xmp == nil && j.IsChunk(0xe1, jpegXMPPfx):
-			pdata, trim = &xmp, len(jpegXMPPfx)
+		case j.IsChunk(0xe1, jpegExifPfx):
+			name, trim = "exif", len(jpegExifPfx)
+		case j.IsChunk(0xe1, jpegXMPPfx):
+			name, trim = "xmp", len(jpegXMPPfx)
 		}
 
-		if pdata == nil {
+		if name == "" {
 			continue
 		}
 
 		_, p, err := j.ReadChunk()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		*pdata = p[trim:]
+		f(name, p[trim:])
 	}
 
-	c.r = r
-
-	if ex != nil {
-		c.rawMeta = append(c.rawMeta, driver.RawMeta{
-			Name:  "exif",
-			Bytes: ex,
-		})
-	}
-
-	if xmp != nil {
-		c.rawMeta = append(c.rawMeta, driver.RawMeta{
-			Name:  "xmp",
-			Bytes: xmp,
-		})
-	}
-
-	return nil
+	return nil, nil
 }
 
-func (c *container) WriteTo(w io.Writer) error {
-	rs, ok := c.r.(io.ReadSeeker)
-	if !ok {
-		return driver.ErrNotReadSeeker
-	}
-
-	_, err := rs.Seek(0, io.SeekStart)
-	if err != nil {
-		return errors.Wrap(err, "jpeg: seek error")
-	}
-
-	j, err := NewScanner(rs)
+func (jpegFmt) WriteWithMeta(w io.Writer, r io.Reader, m []metaio.EncodedMeta) error {
+	j, err := NewScanner(r)
 	if err != nil {
 		return err
 	}
 
-	var exifdata []byte
-	var xmpdata []byte
+	var metaChunks [][]byte
 
-	for _, rm := range c.rawMeta {
+	for _, rm := range m {
 		switch rm.Name {
 		case "exif":
-			exifdata = make([]byte, len(jpegExifPfx)+len(rm.Bytes))
-			n := copy(exifdata, jpegExifPfx)
-			copy(exifdata[n:], rm.Bytes)
+			p := make([]byte, len(jpegExifPfx)+len(rm.Bytes))
+			n := copy(p, jpegExifPfx)
+			copy(p[n:], rm.Bytes)
+			metaChunks = append(metaChunks, p)
 		case "xmp":
-			xmpdata = make([]byte, len(jpegXMPPfx)+len(rm.Bytes))
-			n := copy(xmpdata, jpegXMPPfx)
-			copy(xmpdata[n:], rm.Bytes)
+			p := make([]byte, len(jpegXMPPfx)+len(rm.Bytes))
+			n := copy(p, jpegXMPPfx)
+			copy(p[n:], rm.Bytes)
+			metaChunks = append(metaChunks, p)
 		}
 	}
 
 	var segments [][]byte
 	var jfifSeg, jfxxSeg []byte
-	hasMask := uint(0)
 
 	const (
 		hasJFIF = uint(1 << iota)
@@ -124,7 +90,7 @@ func (c *container) WriteTo(w io.Writer) error {
 		hasXMP
 	)
 
-	for hasMask != (hasJFIF|hasJFXX|hasExif|hasXMP) && j.Next() {
+	for j.Next() {
 		seg, err := j.ReadSegment()
 		if err != nil {
 			return err
@@ -133,24 +99,14 @@ func (c *container) WriteTo(w io.Writer) error {
 		switch {
 
 		case jfifSeg == nil && isChunkSegment(seg, 0xe0, jfifChunkHeader):
-			hasMask |= hasJFIF
 			jfifSeg = seg
 
 		case jfxxSeg == nil && isChunkSegment(seg, 0xe0, jfxxChunkHeader):
-			hasMask |= hasJFXX
 			jfxxSeg = seg
 
-		case isChunkSegment(seg, 0xe1, jpegExifPfx):
-			hasMask |= hasExif
-			if exifdata == nil {
-				exifdata = seg[4:]
-			}
-
-		case isChunkSegment(seg, 0xe1, jpegXMPPfx):
-			hasMask |= hasXMP
-			if xmpdata == nil {
-				xmpdata = seg[4:]
-			}
+		case isChunkSegment(seg, 0xe1, jpegExifPfx),
+			isChunkSegment(seg, 0xe1, jpegXMPPfx):
+			// pass
 
 		default:
 			segments = append(segments, seg)
@@ -166,15 +122,8 @@ func (c *container) WriteTo(w io.Writer) error {
 	ww.write(jfifSeg)
 	ww.write(jfxxSeg)
 
-	if exifdata != nil {
-		err := WriteChunk(w, 0xe1, exifdata)
-		if err != nil {
-			return err
-		}
-	}
-
-	if xmpdata != nil {
-		err := WriteChunk(w, 0xe1, xmpdata)
+	for _, c := range metaChunks {
+		err := WriteChunk(w, 0xe1, c)
 		if err != nil {
 			return err
 		}

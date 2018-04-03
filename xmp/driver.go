@@ -11,12 +11,12 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/tajtiattila/metadata"
-	"github.com/tajtiattila/metadata/driver"
+	"github.com/tajtiattila/metadata/metaio"
 	"github.com/tajtiattila/xmlutil"
 )
 
 func init() {
-	driver.RegisterMetadataFormat("xmp", func() driver.Metadata {
+	metaio.RegisterMetadataFormat("xmp", func(...metaio.Option) metaio.Metadata {
 		return new(Meta)
 	})
 }
@@ -28,7 +28,9 @@ const (
 	toolkit = "github.com/tajtiattila/metadata/xmp"
 )
 
-var _ driver.Metadata = new(Meta)
+var _ metaio.Metadata = new(Meta)
+
+func (m *Meta) MetadataName() string { return "xmp" }
 
 func (m *Meta) UnmarshalMetadata(p []byte) error {
 	var doc xmlutil.Document
