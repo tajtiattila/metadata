@@ -2,15 +2,23 @@ package metaio
 
 import "github.com/pkg/errors"
 
+// Metadata represents a set of metadata attributes.
 type Metadata interface {
-	MetadataName() string
+	FormatName() string
+
+	GetAttr(attr string) interface{}
+
+	SetAttr(attr string, value interface{}) error
+	DelAttr(attr string) error
+}
+
+// IOMetadata is Metadata that
+// can marshal and unmarshal itself in its own format.
+type IOMetadata interface {
+	Metadata
 
 	UnmarshalMetadata([]byte) error
 	MarshalMetadata() ([]byte, error)
-
-	GetMetadataAttr(attr string) interface{}
-	SetMetadataAttr(attr string, value interface{}) error
-	DeleteMetadataAttr(attr string) error
 }
 
 func RegisterMetadataFormat(name string, newm func() Metadata) {
