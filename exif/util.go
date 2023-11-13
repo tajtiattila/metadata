@@ -29,7 +29,7 @@ func New(dx, dy int) *Exif {
 		ent(exiftag.FlashpixVersion, Undef("0100")),
 
 		ent(exiftag.PixelXDimension, Long{uint32(dx)}),
-		ent(exiftag.PixelYDimension, Long{uint32(dx)}),
+		ent(exiftag.PixelYDimension, Long{uint32(dy)}),
 
 		// centered subsampling
 		ent(exiftag.YCbCrPositioning, Short{1}),
